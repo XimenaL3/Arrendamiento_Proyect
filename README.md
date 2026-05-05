@@ -64,3 +64,92 @@ A partir de esta información, se procederá a desglosar los requerimientos func
 * El sistema debe ser escalable, permitiendo agregar más departamentos o usuarios en el futuro.
 * El sistema debe ser compatible con equipos de uso común (computadoras estándar y tablets).
 * El sistema debe mantener integridad en los datos (evitar inconsistencias en pagos y adeudos).
+
+
+# Modelado de la base de datos
+
+Para el desarrollo de la base de datos, se tomó en cuenta el uso de la tecnología de persistencia MySQL, debido a su facilidad de implementación, mantenimiento y a que es la herramienta con la que se cuenta de mayor experiencia.
+
+Para su diseño, se siguieron buenas prácticas de programación, como la normalización de la base de datos hasta la Tercera Forma Normal (3FN), con el objetivo de evitar redundancias en la información y garantizar que los datos almacenados se mantengan limpios, organizados y consistentes.
+
+Asimismo, se consideraron diferentes herramientas que pueden complementar el funcionamiento del sistema. Además de la estructura de la base de datos, se plantea el uso de vistas y procedimientos almacenados, los cuales permitirán implementar parte de la lógica de negocio directamente en el sistema gestor de base de datos, facilitando la gestión de operaciones como los cobros, abonos y consultas de información.
+
+De igual manera, se contempla el uso de triggers para la automatización de procesos, como la actualización de saldos, el registro de movimientos, lo que contribuirá a mejorar la eficiencia y el control dentro del sistema.
+
+### Tabla: Personas
+* idPersona (PK)
+* nombre
+* apellido
+* telefono
+* correo
+
+### Tabla: Roles
+* idRol (PK)
+* nombre_rol (administrador, cajero, cobrador, mantenimiento)
+
+### Tabla: Usuarios
+* idUsuario (PK)
+* idPersona (FK)
+* idRol (FK)
+* usuario
+* contraseña
+
+### Tabla: Departamentos
+* idDepartamento (PK)
+* numero
+* descripcion
+* estado
+
+### Tabla: Inquilinos
+* idInquilino (PK)
+* idPersona (FK)
+* idDepartamento (FK)
+* fecha_inicio
+* fecha_fin
+
+### Tabla: Servicios
+* idServicio (PK)
+* nombre_servicio (agua, luz)
+
+### Tabla: Departamento_servicios
+* iddepartamento_servicio (PK)
+* idDepartamento (FK)
+* idServicio (FK)
+* porcentaje
+* costo_adicional
+
+### Tabla: Pagos
+* idPago (PK)
+* idInquilino (FK)
+* fecha_pago
+* monto_pagado
+* tipo_pago (completo / abono)
+
+### Tabla: Adeudos
+* idAdeudo (PK)
+* idInquilino (FK)
+* monto_total
+* monto_pendiente
+* fecha_limite
+* estado
+
+### Tabla: Visitas
+* idVisita (PK)
+* idUsuario (FK) (cobrador)
+* idInquilino (FK)
+* fecha_visita
+* observaciones
+
+### Tabla: Reportes
+* idReporte (PK)
+* idDepartamento (FK)
+* descripcion
+* fecha_reporte
+* estado
+
+### Tabla: Seguimiento
+* idSeguimiento (PK)
+* idReporte (FK)
+* idUsuario (FK) (mantenimiento)
+* fecha
+* observaciones
