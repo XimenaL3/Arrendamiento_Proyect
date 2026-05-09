@@ -65,6 +65,7 @@ A partir de esta información, se procederá a desglosar los requerimientos func
 * El sistema debe ser compatible con equipos de uso común (computadoras estándar y tablets).
 * El sistema debe mantener integridad en los datos (evitar inconsistencias en pagos y adeudos).
 
+---
 
 # Modelado de la base de datos
 
@@ -76,80 +77,174 @@ Asimismo, se consideraron diferentes herramientas que pueden complementar el fun
 
 De igual manera, se contempla el uso de triggers para la automatización de procesos, como la actualización de saldos, el registro de movimientos, lo que contribuirá a mejorar la eficiencia y el control dentro del sistema.
 
+---
+
+# Interfaz de Administradores (Control Total)
+
+### Panel Principal (Dashboard)
+* **KPIs en tiempo real:** Gráficos de ingresos mensuales, porcentaje de ocupación y total de adeudos vigentes.
+* **Alertas Críticas:** Notificaciones de propiedades en "Aspecto Legal" o mantenimientos urgentes vencidos.
+* **Accesos Rápidos:** Botón para autorizar abonos pendientes y registro de nuevos contratos.  
+
+### Gestión de Capital Humano y Clientes
+* **Módulo de Trabajadores:** Lista con filtros por rol (Cajero, Cobrador, Mantenimiento) y gestión de credenciales de acceso.
+* **Directorio de Inquilinos:** Visualización del Historial Crediticio (Bueno/Malo/Nuevo) para determinar automáticamente el depósito en nuevos contratos.  
+
+### Administración de Propiedades y Servicios
+* **Configurador de Inmuebles:** Definir si es Local, Casa o Edificio.
+* **Matriz de Servicios:** Configurar si el cobro de agua/luz es por monto fijo (Locales) o por porcentaje de consumo (Edificios).
+* **Inventario de Bodega:** Control de stock de insumos de limpieza y alertas de reabastecimiento.  
+
+### Finanzas y Autorizaciones
+* **Módulo de Aprobaciones:** Panel exclusivo para que el Admin genere las Autorizaciones de Abono que los cajeros podrán procesar.
+* **Reportes Contables:** Generación y descarga (PDF/Excel) de estados de cuenta globales, filtrados por fecha, propiedad o inquilino.  
+
+# Interfaz de Cajeros / Tiendas (Operativa de Cobro)
+
+### Panel de Recepción
+* **Buscador Universal:** Localizar inquilinos por nombre, ID o número de propiedad (independientemente del edificio donde estén).
+* **Estatus de Pago:** Visualización de adeudos actuales y fechas límite.  
+
+### Módulo de Transacciones
+* **Cobro de Renta:** Procesamiento de pagos completos.
+* **Validación de Abonos:** Campo para ingresar el ID de Autorización del Administrador; si no existe o expiró, el sistema bloquea la transacción.
+* **Emisión de Comprobantes:** Generación de recibos digitales que especifican la tienda donde se realizó el pago.  
+
+# Interfaz de Cobradores (Seguimiento de Campo)
+
+### Ruta del Día
+* **Mapa de Visitas:** Lista de inquilinos morosos organizada por ubicación geográfica o edificio.
+* **Historial de Gestión:** Consultar observaciones de visitas previas para saber qué se acordó con el inquilino.  
+
+### Registro de Actividad
+* **Formulario de Visita:** Registro de fecha, hora y promesas de pago o quejas recibidas.
+* **Levantamiento de Reportes:** Creación inmediata de reportes de mantenimiento o incidencias detectadas durante la visita.  
+
+# Interfaz de Mantenimiento (Operación Técnica)
+
+### Gestión de Órdenes de Trabajo
+* **Bandeja de Entrada:** Lista de reportes pendientes clasificados por prioridad (Urgente, Medio, Bajo).
+* **Control de Estados:** Botones para "Iniciar Atención", "Pausar" (con motivo) y "Finalizar".  
+
+### Consumo y Evidencias
+* **Uso de Insumos:** Selector para descontar del Inventario de Bodega los productos de limpieza o materiales utilizados en la reparación.
+* **Registro de Evidencias:** Cámara integrada para subir fotos del "Antes" y "Después", marcando si el daño amerita seguimiento legal.
+* **Historial de Propiedad:** Consultar mantenimientos pasados de un local o casa específica para identificar problemas recurrentes.
+
+---
+
 ### Tabla: Personas
 * idPersona (PK)
-* nombre
-* apellido
-* telefono
-* correo
+* Nombre
+* ApellidoP
+* ApellidoM
+* Telefono
+* Correo
 
 ### Tabla: Roles
 * idRol (PK)
-* nombre_rol (administrador, cajero, cobrador, mantenimiento)
+* NombreRol (Administrador, Cajero, Cobrador, Mantenimiento)
 
 ### Tabla: Usuarios
 * idUsuario (PK)
 * idPersona (FK)
 * idRol (FK)
-* usuario
-* contraseña
+* Usuario
+* Contraseña
 
-### Tabla: Departamentos
-* idDepartamento (PK)
-* numero
-* descripcion
-* estado
+### Tabla: Propiedades
+* idPropiedad (PK)
+* idEdificioPadre (FK) (Para agrupar locales/cuartos dentro de un edificio)
+* TipoPropiedad (Local comercial / Casa / Edificio)
+* NumeroIdentificador (Número de casa o local)
+* Descripcion
+* EstadoFisico (Buenas condiciones / Malas condiciones / En mantenimiento)
+* EstadoDisponibilidad (Disponible / Rentado / Aspecto Legal)
 
 ### Tabla: Inquilinos
 * idInquilino (PK)
 * idPersona (FK)
-* idDepartamento (FK)
-* fecha_inicio
-* fecha_fin
+* HistorialCrediticio (Bueno / Malo / Nuevo)
+* RegistroDeudasPrevias (Si ha fallado en pagos antes)
+
+### Tabla: Contratos_Arrendamiento
+* idContrato (PK)
+* idInquilino (FK)
+* idPropiedad (FK)
+* FechaInicio
+* FechaFin
+* MontoRenta
+* MontoDeposito (Calculado según el historial del inquilino)
 
 ### Tabla: Servicios
 * idServicio (PK)
-* nombre_servicio (agua, luz)
+* NombreServicio (Agua / Luz / Internet)
 
-### Tabla: Departamento_servicios
-* iddepartamento_servicio (PK)
-* idDepartamento (FK)
+### Tabla: Propiedad_Servicios
+* idPropiedadServicio (PK)
+* idPropiedad (FK)
 * idServicio (FK)
-* porcentaje
-* costo_adicional
+* ManejoPorPorcentaje (Booleano: Sí/No para consumo de luz en edificios)
+* PorcentajeAsignado
+* CostoFijo (Para servicios básicos incluidos en locales)
+
+### Tabla: Tiendas_Cobro
+* idTienda (PK)
+* NombreTienda
+* idPropiedad (FK) (Referencia al edificio donde se encuentra la tienda física)
+
+### Tabla: Autorizaciones_Abono
+* idAutorizacion (PK)
+* idUsuario (FK) (Admin que autoriza)
+* idInquilino (FK)
+* MontoMinimoAceptado
+* FechaExpiracionAutorizacion
 
 ### Tabla: Pagos
 * idPago (PK)
-* idInquilino (FK)
-* fecha_pago
-* monto_pagado
-* tipo_pago (completo / abono)
+* idContrato (FK)
+* idTienda (FK) (Lugar donde se realizó el pago)
+* idUsuario (FK) (Cajero que recibió el dinero)
+* idAutorizacion (FK) (Obligatorio si es un abono)
+* FechaPago
+* MontoPagado
+* TipoPago (Completo / Abono)
 
 ### Tabla: Adeudos
 * idAdeudo (PK)
-* idInquilino (FK)
-* monto_total
-* monto_pendiente
-* fecha_limite
-* estado
+* idContrato (FK)
+* MontoTotal
+* MontoPendiente
+* FechaLimite
+* Estado (Pendiente / Liquidado)
 
-### Tabla: Visitas
+### Tabla: Bodega_Inventario
+* idProducto (PK)
+* NombreProducto (Insumos de limpieza)
+* CantidadDisponible
+* Descripcion
+
+### Tabla: Mantenimiento_Detalle
+* idMantenimiento (PK)
+* idPropiedad (FK)
+* idUsuario (FK) (Encargado del mantenimiento)
+* idProducto (FK) (Producto de limpieza/bodega utilizado)
+* TareaRealizada
+* FechaInicio
+* FechaFin
+
+### Tabla: Evidencias_Legales
+* idEvidencia (PK)
+* idPropiedad (FK)
+* idInquilino (FK) (En caso de daños causados)
+* DescripcionDano
+* Fotografia (Ruta del archivo)
+* FechaRegistro
+* EsCasoLegal (Booleano)
+
+### Tabla: Visitas_Cobranza
 * idVisita (PK)
-* idUsuario (FK) (cobrador)
+* idUsuario (FK) (Cobrador)
 * idInquilino (FK)
-* fecha_visita
-* observaciones
-
-### Tabla: Reportes
-* idReporte (PK)
-* idDepartamento (FK)
-* descripcion
-* fecha_reporte
-* estado
-
-### Tabla: Seguimiento
-* idSeguimiento (PK)
-* idReporte (FK)
-* idUsuario (FK) (mantenimiento)
-* fecha
-* observaciones
+* FechaVisita
+* Observaciones
