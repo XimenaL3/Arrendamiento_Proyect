@@ -1,15 +1,266 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+/* ==============================
+OBTENER ID
+============================== */
+
+if(!isset($_GET['id']))
+{
+    die("ID de propiedad no válido");
+}
+
+$idPropiedad = $_GET['id'];
+
+/* ==============================
+OBTENER DATOS DE LA PROPIEDAD
+============================== */
+
+$sql = "SELECT * FROM vw_Propiedades WHERE idPropiedad = ?";
+
+$stmt = $conn->prepare($sql);
+
+$stmt->bind_param("i", $idPropiedad);
+
+$stmt->execute();
+
+$resultado = $stmt->get_result();
+
+if($resultado->num_rows == 0)
+{
+    die("Propiedad no encontrada");
+}
+
+$propiedad = $resultado->fetch_assoc();
+
+/* ==============================
+ACTUALIZAR PROPIEDAD
+============================== */
+
+if($_SERVER['REQUEST_METHOD'] == 'POST')
+{
+    $tipoPropiedad = $_POST['tipoPropiedad'];
+    $numeroIdentificador = $_POST['numeroIdentificador'];
+    $descripcion = $_POST['descripcion'];
+    $estadoFisico = $_POST['estadoFisico'];
+    $estadoDisponibilidad = $_POST['estadoDisponibilidad'];
+
+    /* ==============================
+    IMAGEN ACTUAL
+    ============================== */
+
+    $imagenActual = $propiedad['Imagen'];
+
+    /* ==============================
+    SUBIR NUEVA IMAGEN
+    ============================== */
+
+    if(isset($_FILES['imagen']) && $_FILES['imagen']['error'] == 0)
+    {
+        /* Carpeta física */
+
+        $carpetaServidor = "../../images/properties/";
+
+        /* Ruta para guardar en BD */
+
+        $carpetaBD = "images/properties/";
+
+        if(!file_exists($carpetaServidor))
+        {
+            mkdir($carpetaServidor, 0777, true);
+        }
+
+        /* Obtener extensión */
+
+        $extension = pathinfo($_FILES['imagen']['name'], PATHINFO_EXTENSION);
+
+        /* Nombre único */
+
+        $nombreImagen = time() . "_" . uniqid() . "." . $extension;
+
+        /* Ruta completa servidor */
+
+        $rutaServidor = $carpetaServidor . $nombreImagen;
+
+        /* Subir imagen */
+
+        if(move_uploaded_file($_FILES['imagen']['tmp_name'], $rutaServidor))
+        {
+            /* Guardar ruta relativa en BD */
+
+            $imagenActual = $carpetaBD . $nombreImagen;
+        }
+    }
+
+    /* ==============================
+    PROCEDIMIENTO ALMACENADO
+    ============================== */
+
+    $stmtEditar = $conn->prepare("CALL sp_EditarPropiedad(?, ?, ?, ?, ?, ?, ?)");
+
+    $stmtEditar->bind_param(
+        "issssss",
+        $idPropiedad,
+        $tipoPropiedad,
+        $numeroIdentificador,
+        $descripcion,
+        $estadoFisico,
+        $estadoDisponibilidad,
+        $imagenActual
+    );
+
+    if($stmtEditar->execute())
+    {
+        header("Location: Interface_Arrendamientos.php");
+        exit();
+    }
+    else
+    {
+        echo "Error al actualizar: " . mysqli_error($conn);
+    }
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Editar Arrendamiento</title>
 
     <!-- CSS -->
     <link rel="stylesheet" href="../css/style.css">
+
     <link rel="stylesheet" href="../css/Estilo_Edicion.css">
 
     <style>
@@ -34,27 +285,6 @@
         .extra-info h3{
             margin-bottom: 18px;
             color: #1f2937;
-        }
-
-        .evidence-box{
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-            margin-top: 15px;
-        }
-
-        .evidence-item{
-            width: 120px;
-            height: 90px;
-            border-radius: 12px;
-            overflow: hidden;
-            border: 2px solid #dbe3ef;
-        }
-
-        .evidence-item img{
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
         }
 
         .status-badge{
@@ -86,6 +316,22 @@
             background: #e63b3d;
         }
 
+        .alert-error{
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 14px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .edit-avatar{
+            width: 220px;
+            height: 220px;
+            object-fit: cover;
+            border-radius: 18px;
+            border: 3px solid #e5e7eb;
+        }
+
     </style>
 
 </head>
@@ -104,15 +350,20 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
 
                 <div class="brand-text">
 
-                    <h2>Sunlight Gardens</h2>
-                    <span>Panel Administrativo</span>
+                    <h2>
+                        Sunlight Gardens
+                    </h2>
+
+                    <span>
+                        Panel Administrativo
+                    </span>
 
                 </div>
 
@@ -129,7 +380,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Trabajadores</span>
+                    <span>
+                        Trabajadores
+                    </span>
 
                 </a>
 
@@ -141,7 +394,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Clientes</span>
+                    <span>
+                        Clientes
+                    </span>
 
                 </a>
 
@@ -153,11 +408,16 @@
                         class="menu-icon"
                     >
 
-                    <span>Visitas</span>
+                    <span>
+                        Visitas
+                    </span>
 
                 </a>
 
-                <a href="Interface_Arrendamientos.php" class="active">
+                <a 
+                    href="Interface_Arrendamientos.php" 
+                    class="active"
+                >
 
                     <img 
                         src="../images/icons/Arrendamiento_Oscuro.png"
@@ -165,7 +425,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Arrendamientos</span>
+                    <span>
+                        Arrendamientos
+                    </span>
 
                 </a>
 
@@ -177,7 +439,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Abonos</span>
+                    <span>
+                        Abonos
+                    </span>
 
                 </a>
 
@@ -189,7 +453,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Almacén Limpieza</span>
+                    <span>
+                        Almacén Limpieza
+                    </span>
 
                 </a>
 
@@ -201,7 +467,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Reportes</span>
+                    <span>
+                        Reportes
+                    </span>
 
                 </a>
 
@@ -218,7 +486,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Cerrar Sesión</span>
+                    <span>
+                        Cerrar Sesión
+                    </span>
 
                 </a>
 
@@ -239,7 +509,7 @@
                     </h1>
 
                     <p class="subtitle">
-                        Modifica la información del inmueble, pagos y estatus.
+                        Modifica la información del inmueble.
                     </p>
 
                 </div>
@@ -255,9 +525,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            3
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -265,8 +541,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -277,7 +553,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -293,40 +569,54 @@
 
                 <div class="edit-card">
 
+                    <?php if(isset($error)) { ?>
+
+                        <div class="alert-error">
+
+                            <?php echo $error; ?>
+
+                        </div>
+
+                    <?php } ?>
+
                     <!-- FOTO -->
                     <div class="profile-edit">
 
                         <img 
-                            src="../img/local1.jpg"
+                            src="../../<?php echo $propiedad['Imagen']; ?>"
                             alt="Arrendamiento"
                             class="edit-avatar"
                         >
 
-                        <button class="change-photo-btn">
-                            Cambiar Imagen
-                        </button>
-
                         <div class="status-badge status-maintenance">
-                            En mantenimiento
+
+                            <?php echo $propiedad['EstadoFisico']; ?>
+
                         </div>
 
                     </div>
 
                     <!-- FORM -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                        enctype="multipart/form-data"
+                    >
 
                         <div class="form-grid">
 
-                            <!-- NOMBRE -->
+                            <!-- NUMERO -->
                             <div class="input-group">
 
                                 <label>
-                                    Nombre del Inmueble
+                                    Número Identificador
                                 </label>
 
                                 <input 
                                     type="text"
-                                    value="Local Comercial #12"
+                                    name="numeroIdentificador"
+                                    value="<?php echo $propiedad['NumeroIdentificador']; ?>"
+                                    required
                                 >
 
                             </div>
@@ -335,20 +625,27 @@
                             <div class="input-group">
 
                                 <label>
-                                    Tipo de Arrendamiento
+                                    Tipo de Propiedad
                                 </label>
 
-                                <select class="status-select">
+                                <select 
+                                    name="tipoPropiedad"
+                                    class="status-select"
+                                    required
+                                >
 
-                                    <option>
+                                    <option value="Local comercial"
+                                        <?php if($propiedad['TipoPropiedad'] == 'Local comercial') echo 'selected'; ?>>
                                         Local Comercial
                                     </option>
 
-                                    <option>
+                                    <option value="Casa"
+                                        <?php if($propiedad['TipoPropiedad'] == 'Casa') echo 'selected'; ?>>
                                         Casa
                                     </option>
 
-                                    <option selected>
+                                    <option value="Edificio"
+                                        <?php if($propiedad['TipoPropiedad'] == 'Edificio') echo 'selected'; ?>>
                                         Edificio
                                     </option>
 
@@ -356,84 +653,63 @@
 
                             </div>
 
-                            <!-- INQUILINO -->
+                            <!-- ESTADO FISICO -->
                             <div class="input-group">
 
                                 <label>
-                                    Nombre del Inquilino
+                                    Estado Físico
                                 </label>
 
-                                <input 
-                                    type="text"
-                                    value="Carlos Mendoza"
+                                <select 
+                                    name="estadoFisico"
+                                    class="status-select"
+                                    required
                                 >
+
+                                    <option value="Buenas condiciones"
+                                        <?php if($propiedad['EstadoFisico'] == 'Buenas condiciones') echo 'selected'; ?>>
+                                        Buenas condiciones
+                                    </option>
+
+                                    <option value="Malas condiciones"
+                                        <?php if($propiedad['EstadoFisico'] == 'Malas condiciones') echo 'selected'; ?>>
+                                        Malas condiciones
+                                    </option>
+
+                                    <option value="En mantenimiento"
+                                        <?php if($propiedad['EstadoFisico'] == 'En mantenimiento') echo 'selected'; ?>>
+                                        En mantenimiento
+                                    </option>
+
+                                </select>
 
                             </div>
 
-                            <!-- TELEFONO -->
+                            <!-- DISPONIBILIDAD -->
                             <div class="input-group">
 
                                 <label>
-                                    Teléfono
+                                    Estado de Disponibilidad
                                 </label>
 
-                                <input 
-                                    type="text"
-                                    value="+52 418 123 4567"
+                                <select 
+                                    name="estadoDisponibilidad"
+                                    class="status-select"
+                                    required
                                 >
 
-                            </div>
-
-                            <!-- MONTO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Renta Mensual
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    value="$12,000"
-                                >
-
-                            </div>
-
-                            <!-- DEPOSITO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Depósito
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    value="$15,000"
-                                >
-
-                            </div>
-
-                            <!-- ESTATUS -->
-                            <div class="input-group">
-
-                                <label>
-                                    Estatus
-                                </label>
-
-                                <select class="status-select">
-
-                                    <option>
+                                    <option value="Disponible"
+                                        <?php if($propiedad['EstadoDisponibilidad'] == 'Disponible') echo 'selected'; ?>>
                                         Disponible
                                     </option>
 
-                                    <option selected>
-                                        Ocupado
+                                    <option value="Rentado"
+                                        <?php if($propiedad['EstadoDisponibilidad'] == 'Rentado') echo 'selected'; ?>>
+                                        Rentado
                                     </option>
 
-                                    <option>
-                                        Mantenimiento
-                                    </option>
-
-                                    <option>
+                                    <option value="Aspecto Legal"
+                                        <?php if($propiedad['EstadoDisponibilidad'] == 'Aspecto Legal') echo 'selected'; ?>>
                                         Aspecto Legal
                                     </option>
 
@@ -441,41 +717,17 @@
 
                             </div>
 
-                            <!-- PAGO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Estado de Pago
-                                </label>
-
-                                <select class="status-select">
-
-                                    <option>
-                                        Pagado
-                                    </option>
-
-                                    <option selected>
-                                        Pendiente
-                                    </option>
-
-                                    <option>
-                                        Adeudo
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                            <!-- DIRECCION -->
+                            <!-- IMAGEN -->
                             <div class="input-group full-width">
 
                                 <label>
-                                    Dirección
+                                    Cambiar Imagen
                                 </label>
 
                                 <input 
-                                    type="text"
-                                    value="Av. Principal #45, Zona Centro"
+                                    type="file"
+                                    name="imagen"
+                                    accept="image/*"
                                 >
 
                             </div>
@@ -487,55 +739,11 @@
                                     Descripción
                                 </label>
 
-                                <textarea rows="5">
-
-Edificio con locales comerciales y habitaciones superiores. El servicio de luz se divide por porcentajes dependiendo del consumo de cada habitación.
-
-                                </textarea>
-
-                            </div>
-
-                        </div>
-
-                        <!-- INFORMACION EXTRA -->
-                        <div class="extra-info">
-
-                            <h3>
-                                Evidencias y Mantenimiento
-                            </h3>
-
-                            <p>
-                                Reparación de instalaciones eléctricas en proceso.
-                            </p>
-
-                            <div class="evidence-box">
-
-                                <div class="evidence-item">
-
-                                    <img 
-                                        src="../img/evidencia1.jpg"
-                                        alt="Evidencia"
-                                    >
-
-                                </div>
-
-                                <div class="evidence-item">
-
-                                    <img 
-                                        src="../img/evidencia2.jpg"
-                                        alt="Evidencia"
-                                    >
-
-                                </div>
-
-                                <div class="evidence-item">
-
-                                    <img 
-                                        src="../img/evidencia3.jpg"
-                                        alt="Evidencia"
-                                    >
-
-                                </div>
+                                <textarea 
+                                    rows="5"
+                                    name="descripcion"
+                                    required
+                                ><?php echo $propiedad['Descripcion']; ?></textarea>
 
                             </div>
 
@@ -544,13 +752,13 @@ Edificio con locales comerciales y habitaciones superiores. El servicio de luz s
                         <!-- BUTTONS -->
                         <div class="form-buttons">
 
-                            <button type="button" class="btn-delete">
-                                Eliminar
-                            </button>
-
-                            <button type="reset" class="btn-cancel">
+                            <a 
+                                href="Interface_Arrendamientos.php"
+                                class="btn-cancel"
+                                style="text-decoration:none;"
+                            >
                                 Cancelar
-                            </button>
+                            </a>
 
                             <button type="submit" class="btn-save">
                                 Guardar Cambios
@@ -591,55 +799,85 @@ Edificio con locales comerciales y habitaciones superiores. El servicio de luz s
 
                 <div class="notification-list">
 
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nuevo reporte registrado
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró un nuevo reporte pendiente.
-                            </p>
+?>
 
-                            <span>
-                                Hace 5 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Pago pendiente
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Existe un arrendamiento con retraso de pago.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 20 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -649,7 +887,6 @@ Edificio con locales comerciales y habitaciones superiores. El servicio de luz s
 
     <!-- SCRIPT -->
     <script>
-
         const sidebar = document.getElementById('sidebar');
 
         const brandToggle = document.getElementById('brandToggle');
@@ -664,24 +901,20 @@ Edificio con locales comerciales y habitaciones superiores. El servicio de luz s
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
-
+        function toggleSidebar()
+        {
             sidebar.classList.toggle('collapsed');
 
             overlay.classList.toggle('active');
-
         }
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
-
+        overlay.addEventListener('click', () =>
+        {
             overlay.classList.remove('active');
 
             sidebar.classList.remove('collapsed');
-
-            notificationsModal.classList.remove('active');
-
         });
 
         /* ==============================
@@ -705,18 +938,64 @@ Edificio con locales comerciales y habitaciones superiores. El servicio de luz s
         });
 
         /* ==============================
-        MARCAR COMO VISTA
+        MARCAR NOTIFICACIÓN
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 
@@ -727,3 +1006,9 @@ Edificio con locales comerciales y habitaciones superiores. El servicio de luz s
 </body>
 
 </html>
+
+<?php
+
+ob_end_flush();
+
+?>

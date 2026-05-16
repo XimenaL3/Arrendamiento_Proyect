@@ -1,9 +1,243 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+$mensaje = "";
+
+/* ==============================
+OBTENER USUARIOS
+============================== */
+
+$sqlUsuarios = 
+"    SELECT 
+        i.idInquilino,
+        CONCAT(
+            p.Nombre,' ',
+            p.ApellidoP,' ',
+            IFNULL(p.ApellidoM,'')
+        ) AS NombreCompleto
+    FROM Inquilinos i
+    INNER JOIN Personas p
+        ON i.idPersona = p.idPersona";
+
+$inquilinos = mysqli_query($conn, $sqlUsuarios);
+
+/* ==============================
+OBTENER PROPIEDADES
+============================== */
+
+$sqlPropiedades = "SELECT
+                        idPropiedad,
+                        CONCAT(
+                            TipoPropiedad,
+                            ' #',
+                            NumeroIdentificador
+                        ) AS Propiedad
+                    FROM Propiedades
+                    ORDER BY TipoPropiedad ASC";
+
+$propiedades = mysqli_query($conn, $sqlPropiedades);
+
+/* ==============================
+REGISTRAR REPORTE
+============================== */
+
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+
+    $idInquilino  = $_POST['idInquilino'];
+    $idPropiedad  = $_POST['idPropiedad'];
+
+    $titulo       = $_POST['titulo'];
+    $descripcion  = $_POST['descripcion'];
+
+    $tipoReporte  = $_POST['tipoReporte'];
+    $prioridad    = $_POST['prioridad'];
+
+    $evidencia = "";
+
+    // SUBIR ARCHIVO
+    if (isset($_FILES['evidencia']) && $_FILES['evidencia']['error'] == 0) {
+
+        $carpeta = "../images/reports/";
+
+        if (!file_exists($carpeta)) {
+            mkdir($carpeta, 0777, true);
+        }
+
+        $nombreArchivo = time() . "_" . basename($_FILES['evidencia']['name']);
+        $rutaDestino = $carpeta . $nombreArchivo;
+
+        if (move_uploaded_file($_FILES['evidencia']['tmp_name'], $rutaDestino)) {
+            $evidencia = $nombreArchivo;
+        }
+    }
+
+    // DEBUG (IMPORTANTE PARA VER ERRORES)
+    if (!$conn->query("SET @debug=1")) {}
+
+    $stmt = $conn->prepare("CALL sp_RegistrarReporte(?, ?, ?, ?, ?, ?, ?)");
+
+    if (!$stmt) {
+        die("Error en prepare: " . $conn->error);
+    }
+
+    $stmt->bind_param(
+        "iisssss",
+        $idInquilino,
+        $idPropiedad,
+        $titulo,
+        $descripcion,
+        $tipoReporte,
+        $prioridad,
+        $evidencia
+    );
+
+    if ($stmt->execute()) {
+
+        header("Location: Interface_Reportes.php");
+        exit();
+
+    } else {
+
+        die("Error al ejecutar SP: " . $stmt->error);
+    }
+
+    $stmt->close();
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>
@@ -154,117 +388,45 @@
 
         }
 
-        .info-card{
+        .hidden-radio{
 
-            margin-top: 30px;
-
-            background: #ffffff;
-
-            border-radius: 22px;
-
-            border: 1px solid #e5e7eb;
-
-            padding: 24px;
-
-            box-shadow: 0 10px 25px rgba(0,0,0,.05);
+            display: none;
 
         }
 
-        .info-card h3{
+        .priority-selected{
+
+            border: 2px solid black;
+
+            background: #ececec;
+
+        }
+
+        .alerta{
 
             margin-bottom: 20px;
 
-            color: #111827;
+            padding: 15px;
+
+            border-radius: 12px;
+
+            font-weight: 600;
 
         }
 
-        .info-grid{
+        .success{
 
-            display: grid;
+            background: #dcfce7;
 
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-
-            gap: 18px;
+            color: #166534;
 
         }
 
-        .info-item{
+        .error{
 
-            background: #f9fafb;
+            background: #fee2e2;
 
-            border-radius: 16px;
-
-            padding: 18px;
-
-            border: 1px solid #e5e7eb;
-
-        }
-
-        .info-item span{
-
-            display: block;
-
-            font-size: 13px;
-
-            color: #6b7280;
-
-            margin-bottom: 8px;
-
-        }
-
-        .info-item strong{
-
-            font-size: 16px;
-
-            color: #111827;
-
-        }
-
-        .details-box{
-
-            display: flex;
-
-            gap: 16px;
-
-            flex-wrap: wrap;
-
-            margin-top: 20px;
-
-        }
-
-        .detail-card{
-
-            flex: 1;
-
-            min-width: 200px;
-
-            background: #f9fafb;
-
-            border: 1px solid #e5e7eb;
-
-            border-radius: 16px;
-
-            padding: 18px;
-
-        }
-
-        .detail-card h4{
-
-            margin-bottom: 10px;
-
-            color: #111827;
-
-            font-size: 15px;
-
-        }
-
-        .detail-card p{
-
-            color: #6b7280;
-
-            font-size: 14px;
-
-            line-height: 1.6;
+            color: #991b1b;
 
         }
 
@@ -282,11 +444,10 @@
         <!-- SIDEBAR -->
         <aside class="sidebar collapsed" id="sidebar">
 
-            <!-- LOGO -->
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -300,14 +461,12 @@
 
             </div>
 
-            <!-- NAV -->
             <nav class="sidebar-nav">
 
                 <a href="Interface_Trabajadores.php">
 
                     <img 
                         src="../images/icons/Trabajadores_Claro.png"
-                        alt="Trabajadores"
                         class="menu-icon"
                     >
 
@@ -319,7 +478,6 @@
 
                     <img 
                         src="../images/icons/Clientes_Claro.png"
-                        alt="Clientes"
                         class="menu-icon"
                     >
 
@@ -331,7 +489,6 @@
 
                     <img 
                         src="../images/icons/Visitas_Claro.png"
-                        alt="Visitas"
                         class="menu-icon"
                     >
 
@@ -343,7 +500,6 @@
 
                     <img 
                         src="../images/icons/Arrendamiento_Claro.png"
-                        alt="Arrendamiento"
                         class="menu-icon"
                     >
 
@@ -355,7 +511,6 @@
 
                     <img 
                         src="../images/icons/Pago_Claro.png"
-                        alt="Abonos"
                         class="menu-icon"
                     >
 
@@ -367,7 +522,6 @@
 
                     <img 
                         src="../images/icons/Mantenimiento_Claro.png"
-                        alt="Almacen Limpieza"
                         class="menu-icon"
                     >
 
@@ -379,7 +533,6 @@
 
                     <img 
                         src="../images/icons/Reportes_Oscuro.png"
-                        alt="Reportes"
                         class="menu-icon"
                     >
 
@@ -389,7 +542,7 @@
 
             </nav>
 
-            <!-- LOGOUT -->
+                        <!-- LOGOUT -->
             <div class="logout">
 
                 <a href="#">
@@ -421,7 +574,7 @@
                     </h1>
 
                     <p class="subtitle">
-                        Registra incidencias, problemas o solicitudes dentro del sistema.
+                        Registra incidencias dentro del sistema.
                     </p>
 
                 </div>
@@ -437,9 +590,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            3
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -447,8 +606,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -459,7 +618,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -475,37 +634,82 @@
 
                 <div class="edit-card">
 
-                    <!-- FOTO -->
-                    <div class="profile-edit">
+                    <?php if($mensaje != ""){ ?>
 
-                        <img 
-                            src="../images/icons/Reportes_Oscuro.png"
-                            alt="Reporte"
-                            class="edit-avatar"
-                        >
+                        <div class="alerta success">
 
-                        <button class="change-photo-btn">
-                            Subir Evidencia
-                        </button>
-
-                        <div style="margin-top: 15px;">
-
-                            <span class="status-badge">
-                                Reporte Pendiente
-                            </span>
+                            <?php echo $mensaje; ?>
 
                         </div>
 
-                    </div>
+                    <?php } ?>
 
                     <!-- FORM -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                        enctype="multipart/form-data"
+                    >
 
                         <h3 class="section-subtitle">
                             Información General
                         </h3>
 
                         <div class="form-grid">
+
+                            <!-- USUARIO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Inquilino
+                                </label>
+
+                                <select name="idInquilino" required>
+
+                                    <option selected disabled>
+                                        Selecciona un inquilino
+                                    </option>
+
+                                    <?php while($inquilino = mysqli_fetch_assoc($inquilinos)){ ?>
+
+                                        <option value="<?php echo $inquilino['idInquilino']; ?>">
+
+                                            <?php echo $inquilino['NombreCompleto']; ?>
+
+                                        </option>
+
+                                    <?php } ?>
+
+                                </select>
+
+                            </div>
+
+                            <!-- PROPIEDAD -->
+                            <div class="input-group">
+
+                                <label>
+                                    Propiedad
+                                </label>
+
+                                <select name="idPropiedad" required>
+
+                                    <option selected disabled>
+                                        Selecciona una propiedad
+                                    </option>
+
+                                    <?php while($propiedad = mysqli_fetch_assoc($propiedades)){ ?>
+
+                                        <option value="<?php echo $propiedad['idPropiedad']; ?>">
+
+                                            <?php echo $propiedad['Propiedad']; ?>
+
+                                        </option>
+
+                                    <?php } ?>
+
+                                </select>
+
+                            </div>
 
                             <!-- TITULO -->
                             <div class="input-group">
@@ -516,6 +720,8 @@
 
                                 <input 
                                     type="text"
+                                    name="titulo"
+                                    required
                                     placeholder="Ejemplo: Fuga de agua"
                                 >
 
@@ -528,54 +734,33 @@
                                     Tipo de Reporte
                                 </label>
 
-                                <select>
+                                <select name="tipoReporte" required>
 
                                     <option selected disabled>
                                         Selecciona una opción
                                     </option>
 
-                                    <option>
+                                    <option value="Mantenimiento">
                                         Mantenimiento
                                     </option>
 
-                                    <option>
-                                        Seguridad
+                                    <option value="Cobranza">
+                                        Cobranza
                                     </option>
 
-                                    <option>
+                                    <option value="Legal">
                                         Legal
                                     </option>
 
-                                    <option>
-                                        Limpieza
+                                    <option value="Inventario">
+                                        Inventario
+                                    </option>
+
+                                    <option value="General">
+                                        General
                                     </option>
 
                                 </select>
-
-                            </div>
-
-                            <!-- UBICACION -->
-                            <div class="input-group">
-
-                                <label>
-                                    Ubicación
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    placeholder="Ejemplo: Local Comercial #12"
-                                >
-
-                            </div>
-
-                            <!-- FECHA -->
-                            <div class="input-group">
-
-                                <label>
-                                    Fecha del Reporte
-                                </label>
-
-                                <input type="date">
 
                             </div>
 
@@ -587,41 +772,63 @@
 
                         <div class="priority-box">
 
-                            <div class="priority-card priority-high">
+                            <label class="priority-card priority-high">
+
+                                <input 
+                                    type="radio"
+                                    name="prioridad"
+                                    value="Alta"
+                                    class="hidden-radio"
+                                    required
+                                >
 
                                 <h4>
                                     Alta
                                 </h4>
 
                                 <p>
-                                    Problemas urgentes o riesgos importantes.
+                                    Problemas urgentes.
                                 </p>
 
-                            </div>
+                            </label>
 
-                            <div class="priority-card priority-medium">
+                            <label class="priority-card priority-medium">
+
+                                <input 
+                                    type="radio"
+                                    name="prioridad"
+                                    value="Media"
+                                    class="hidden-radio"
+                                >
 
                                 <h4>
                                     Media
                                 </h4>
 
                                 <p>
-                                    Situaciones importantes pero no críticas.
+                                    Situaciones importantes.
                                 </p>
 
-                            </div>
+                            </label>
 
-                            <div class="priority-card priority-low">
+                            <label class="priority-card priority-low">
+
+                                <input 
+                                    type="radio"
+                                    name="prioridad"
+                                    value="Baja"
+                                    class="hidden-radio"
+                                >
 
                                 <h4>
                                     Baja
                                 </h4>
 
                                 <p>
-                                    Solicitudes menores o informativas.
+                                    Solicitudes menores.
                                 </p>
 
-                            </div>
+                            </label>
 
                         </div>
 
@@ -639,7 +846,9 @@
 
                                 <textarea 
                                     rows="6"
-                                    placeholder="Describe el problema, situación o solicitud..."
+                                    name="descripcion"
+                                    required
+                                    placeholder="Describe el problema..."
                                 ></textarea>
 
                             </div>
@@ -655,124 +864,14 @@
                             <div class="input-group full-width">
 
                                 <label>
-                                    Subir Fotografías o Archivos
+                                    Subir Evidencia
                                 </label>
 
-                                <div class="upload-box">
-
-                                    <img 
-                                        src="../images/icons/Agregar.png"
-                                        alt="Upload"
-                                        width="55"
-                                    >
-
-                                    <p>
-                                        Arrastra imágenes o documentos aquí
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                        </div>
-
-                        <!-- RESUMEN -->
-                        <div class="info-card">
-
-                            <h3>
-                                Resumen del Reporte
-                            </h3>
-
-                            <div class="info-grid">
-
-                                <div class="info-item">
-
-                                    <span>
-                                        Estado
-                                    </span>
-
-                                    <strong>
-                                        Pendiente
-                                    </strong>
-
-                                </div>
-
-                                <div class="info-item">
-
-                                    <span>
-                                        Prioridad
-                                    </span>
-
-                                    <strong>
-                                        Alta
-                                    </strong>
-
-                                </div>
-
-                                <div class="info-item">
-
-                                    <span>
-                                        Responsable
-                                    </span>
-
-                                    <strong>
-                                        Área de Mantenimiento
-                                    </strong>
-
-                                </div>
-
-                                <div class="info-item">
-
-                                    <span>
-                                        Fecha de Registro
-                                    </span>
-
-                                    <strong>
-                                        09 Mayo 2026
-                                    </strong>
-
-                                </div>
-
-                            </div>
-
-                            <!-- DETALLES -->
-                            <div class="details-box">
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Observaciones
-                                    </h4>
-
-                                    <p>
-                                        El reporte será revisado por el administrador encargado.
-                                    </p>
-
-                                </div>
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Tiempo Estimado
-                                    </h4>
-
-                                    <p>
-                                        Aproximadamente 24 a 48 horas para respuesta inicial.
-                                    </p>
-
-                                </div>
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Seguimiento
-                                    </h4>
-
-                                    <p>
-                                        El estado del reporte podrá actualizarse desde el panel principal.
-                                    </p>
-
-                                </div>
+                                <input 
+                                    type="file"
+                                    name="evidencia"
+                                    accept="image/*"
+                                >
 
                             </div>
 
@@ -824,55 +923,85 @@
 
                 <div class="notification-list">
 
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nuevo reporte registrado
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró un nuevo reporte pendiente.
-                            </p>
+?>
 
-                            <span>
-                                Hace 5 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Pago pendiente
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Existe un arrendamiento con retraso de pago.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 20 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -882,7 +1011,6 @@
 
     <!-- SCRIPT -->
     <script>
-
         const sidebar = document.getElementById('sidebar');
 
         const brandToggle = document.getElementById('brandToggle');
@@ -897,27 +1025,25 @@
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
+        const priorityCards = document.querySelectorAll('.priority-card');
 
-            sidebar.classList.toggle('collapsed');
+        priorityCards.forEach(card => {
 
-            overlay.classList.toggle('active');
+            card.addEventListener('click', () => {
 
-        }
+                priorityCards.forEach(c => {
 
-        brandToggle.addEventListener('click', toggleSidebar);
+                    c.classList.remove('priority-selected');
 
-        overlay.addEventListener('click', () => {
+                });
 
-            overlay.classList.remove('active');
+                card.classList.add('priority-selected');
 
-            sidebar.classList.remove('collapsed');
-
-            notificationsModal.classList.remove('active');
+            });
 
         });
 
-        /* ==============================
+       /* ==============================
         MODAL NOTIFICACIONES
         ============================== */
 
@@ -938,18 +1064,64 @@
         });
 
         /* ==============================
-        MARCAR COMO VISTA
+        MARCAR NOTIFICACIÓN
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 

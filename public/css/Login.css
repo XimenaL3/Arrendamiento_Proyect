@@ -664,3 +664,51 @@ RESPONSIVE
     }
 
 }
+
+.right-panel{
+
+    height: 100vh;
+    overflow: hidden;
+
+}
+
+#registerForm{
+
+    max-height: 90vh;
+    overflow-y: auto;
+    padding-right: 10px;
+
+}
+
+#registerForm::-webkit-scrollbar{
+
+    width: 8px;
+
+}
+
+#registerForm::-webkit-scrollbar-thumb{
+
+    background: #999;
+    border-radius: 10px;
+}
+
+.menu-btn{
+
+    background: transparent;
+    color: white;
+    transition: .3s ease;
+
+}
+
+.active-btn{
+
+    background: white !important;
+    color: black !important;
+
+}
+
+.active-btn i{
+
+    color: black !important;
+
+}

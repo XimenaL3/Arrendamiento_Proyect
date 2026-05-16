@@ -1,381 +1,602 @@
+<?php
+
+ob_start();
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+require_once "../../includes/Conexion.php";
+
+if (!$conn) {
+    die("Error de conexión a la base de datos");
+}
+
+/* ================================
+   USUARIO LOGUEADO
+================================ */
+$stmt = $conn->prepare("
+    SELECT p.Nombre, p.ApellidoP, p.ApellidoM, p.Imagen, r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if ($stmt) {
+
+    $stmt->bind_param("i", $idUsuario);
+    $stmt->execute();
+    $stmt->bind_result($nombre, $apellidoP, $apellidoM, $imagen, $rol);
+    $stmt->fetch();
+    $stmt->close();
+
+    $nombre = trim($nombre ?? '');
+    $apellidoP = trim($apellidoP ?? '');
+    $apellidoM = trim($apellidoM ?? '');
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+
+} else {
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagenUsuario = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+
+/* ================================
+   NOTIFICACIONES
+================================ */
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+$stmtNoti->bind_param("i", $idUsuario);
+$stmtNoti->execute();
+$resultNoti = $stmtNoti->get_result();
+
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+$stmtCount->bind_param("i", $idUsuario);
+$stmtCount->execute();
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = ($row = $resultCount->fetch_assoc()) ? $row['total'] : 0;
+
+
+/* ================================
+   REPORTES (NUEVA VISTA)
+================================ */
+$sql = "SELECT * FROM vw_Reportes ORDER BY FechaRegistro DESC";
+$resultado = $conn->query($sql);
+
+$reportes = [];
+$totalReportes = 0;
+$pendientes = 0;
+$atendidos = 0;
+$cancelados = 0;
+
+if ($resultado && $resultado->num_rows > 0) {
+
+    while ($row = $resultado->fetch_assoc()) {
+
+        $reportes[] = $row;
+        $totalReportes++;
+
+        switch ($row['Estado'] ?? '') {
+            case 'Pendiente':
+                $pendientes++;
+                break;
+            case 'Atendido':
+                $atendidos++;
+                break;
+            case 'Cancelado':
+                $cancelados++;
+                break;
+        }
+    }
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <meta 
+        name="viewport" 
+        content="width=device-width, initial-scale=1.0"
+    >
 
     <title>
         Gestión de Reportes
     </title>
 
     <!-- CSS -->
-    <link rel="stylesheet" href="../css/style.css">
+    <link 
+        rel="stylesheet" 
+        href="../css/style.css"
+    >
 
-        <style>
+    <style>
 
-            /* =========================================
-            SOLO CSS EXTRA PARA REPORTES
-            ========================================= */
+        .date-wrapper{
 
-            .date-wrapper{
+            position: relative;
 
-                position: relative;
+        }
 
-            }
+        .date-input{
 
-            .date-input{
+            min-width: 220px;
 
-                min-width: 220px;
+            height: 52px;
 
-                height: 52px;
+            padding: 0 16px;
 
-                padding: 0 16px;
+            border-radius: 14px;
 
-                border-radius: 14px;
+            border: 1px solid var(--border);
 
-                border: 1px solid var(--border);
+            background: #fafafa;
 
-                background: #fafafa;
+            color: var(--text);
 
-                color: var(--text);
+            font-size: 14px;
 
-                font-size: 14px;
+            outline: none;
 
-                outline: none;
+            transition: 0.3s ease;
 
-                transition: 0.3s ease;
+            cursor: pointer;
 
-                cursor: pointer;
+        }
 
-            }
+        .reports-grid{
 
-            .date-input:focus{
+            display: grid;
 
-                border-color: black;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
 
-                background: white;
+            gap: 25px;
 
-            }
+        }
 
-            .date-input::-webkit-calendar-picker-indicator{
+        .report-card{
 
-                cursor: pointer;
+            background: white;
 
-                opacity: 0.7;
+            border-radius: 26px;
 
-                transition: 0.3s ease;
+            padding: 25px;
 
-            }
+            box-shadow: var(--shadow);
 
-            .date-input::-webkit-calendar-picker-indicator:hover{
+            transition: 0.3s ease;
 
-                opacity: 1;
+        }
 
-            }
+        .report-card:hover{
 
-            /* =========================================
-            REPORTS GRID
-            ========================================= */
+            transform: translateY(-6px);
 
-            .reports-grid{
+        }
 
-                display: grid;
+        .report-header{
 
-                grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            display: flex;
 
-                gap: 25px;
+            justify-content: space-between;
 
-            }
+            align-items: flex-start;
 
-            /* =========================================
-            REPORT CARD
-            ========================================= */
+            margin-bottom: 20px;
 
-            .report-card{
+        }
 
-                background: white;
+        .report-user{
 
-                border-radius: 26px;
+            display: flex;
 
-                padding: 25px;
+            align-items: center;
 
-                box-shadow: var(--shadow);
+            gap: 15px;
 
-                transition: 0.3s ease;
+        }
 
-            }
+        .report-user img{
 
-            .report-card:hover{
+            width: 68px;
 
-                transform: translateY(-6px);
+            height: 68px;
 
-            }
+            border-radius: 18px;
 
-            .report-header{
+            object-fit: cover;
 
-                display: flex;
+            border: 2px solid #e5e7eb;
 
-                justify-content: space-between;
+        }
 
-                align-items: flex-start;
+        .report-user h3{
 
-                margin-bottom: 20px;
+            font-size: 18px;
 
-            }
+            margin-bottom: 5px;
 
-            .report-user{
+        }
 
-                display: flex;
+        .report-user p{
 
-                align-items: center;
+            color: var(--text-muted);
 
-                gap: 15px;
+            font-size: 14px;
 
-            }
+        }
 
-            .report-user img{
+        .status{
 
-                width: 68px;
+            padding: 8px 14px;
 
-                height: 68px;
+            border-radius: 30px;
 
-                border-radius: 18px;
+            font-size: 12px;
 
-                object-fit: cover;
+            font-weight: 700;
 
-            }
+        }
 
-            .report-user h3{
+        .pending{
 
-                font-size: 18px;
+            background: #fef3c7;
 
-                margin-bottom: 5px;
+            color: #92400e;
 
-            }
+        }
 
-            .report-user p{
+        .completed{
 
-                color: var(--text-muted);
+            background: #dcfce7;
 
-                font-size: 14px;
+            color: #166534;
 
-            }
+        }
 
-            /* =========================================
-            STATUS
-            ========================================= */
+        .cancelled{
 
-            .status{
+            background: #fee2e2;
 
-                padding: 8px 14px;
+            color: #991b1b;
 
-                border-radius: 30px;
+        }
 
-                font-size: 12px;
+        .report-info{
 
-                font-weight: 700;
+            margin-bottom: 20px;
 
-            }
+        }
 
-            .pending{
+        .report-info p{
 
-                background: #fef3c7;
+            color: var(--text-muted);
 
-                color: #92400e;
+            line-height: 1.6;
 
-            }
+            margin-bottom: 12px;
 
-            .completed{
+        }
 
-                background: #e5e7eb;
+        .report-details{
 
-                color: #111827;
+            display: grid;
 
-            }
+            grid-template-columns: repeat(2,1fr);
 
-            .cancelled{
+            gap: 15px;
 
-                background: #f3f4f6;
+            margin-top: 20px;
 
-                color: #6b7280;
+        }
 
-            }
+        .detail-box{
 
-            /* =========================================
-            INFO
-            ========================================= */
+            background: #f9fafb;
 
-            .report-info{
+            border-radius: 16px;
 
-                margin-bottom: 20px;
+            padding: 14px;
 
-            }
+            border: 1px solid var(--border);
 
-            .report-info p{
+        }
 
-                color: var(--text-muted);
+        .detail-box span{
 
-                line-height: 1.6;
+            display: block;
 
-                margin-bottom: 12px;
+            font-size: 12px;
 
-            }
+            color: var(--text-muted);
 
-            /* =========================================
-            DETAILS
-            ========================================= */
+            margin-bottom: 6px;
 
-            .report-details{
+        }
 
-                display: grid;
+        .detail-box strong{
 
-                grid-template-columns: repeat(2,1fr);
+            font-size: 15px;
 
-                gap: 15px;
+            color: var(--text);
 
-                margin-top: 20px;
+        }
 
-            }
+        .report-actions{
 
-            .detail-box{
+            display: flex;
 
-                background: #f9fafb;
+            gap: 12px;
 
-                border-radius: 16px;
+            margin-top: 24px;
 
-                padding: 14px;
+        }
 
-                border: 1px solid var(--border);
+        .btn-report{
 
-            }
+            flex: 1;
 
-            .detail-box span{
+            border: none;
 
-                display: block;
+            padding: 13px;
 
-                font-size: 12px;
+            border-radius: 14px;
 
-                color: var(--text-muted);
+            cursor: pointer;
 
-                margin-bottom: 6px;
+            font-weight: 600;
 
-            }
+            transition: 0.3s ease;
 
-            .detail-box strong{
+            text-decoration: none;
 
-                font-size: 15px;
+            text-align: center;
 
-                color: var(--text);
+        }
 
-            }
+        .btn-download{
 
-            /* =========================================
-            ACTIONS
-            ========================================= */
+            background: black;
 
-            .report-actions{
+            color: white;
 
-                display: flex;
+        }
 
-                gap: 12px;
+        .btn-download:hover{
 
-                margin-top: 24px;
+            background: #111827;
 
-            }
+        }
 
-            .btn-report{
+        .btn-view{
 
-                flex: 1;
+            background: #f3f3f3;
 
-                border: none;
+            color: black;
 
-                padding: 13px;
+        }
 
-                border-radius: 14px;
+        .btn-view:hover{
 
-                cursor: pointer;
+            background: #e5e7eb;
 
-                font-weight: 600;
+        }
 
-                transition: 0.3s ease;
+        .stats-grid{
 
-            }
+            display: grid;
 
-            .btn-download{
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 
-                background: black;
+            gap: 20px;
 
-                color: white;
+            margin-bottom: 35px;
 
-            }
+        }
 
-            .btn-download:hover{
+        .stat-card{
 
-                background: #000000;
+            background: white;
 
-            }
+            border-radius: 24px;
 
-            .btn-view{
+            padding: 24px;
 
-                background: #f3f3f3;
+            box-shadow: var(--shadow);
 
-                color: black;
+        }
 
-            }
+        .stat-card h3{
 
-            .btn-view:hover{
+            color: var(--text-muted);
 
-                background: #e5e7eb;
+            font-size: 14px;
 
-            }
+            margin-bottom: 10px;
 
-            /* =========================================
-            STATS
-            ========================================= */
+        }
 
-            .stats-grid{
+        .stat-card strong{
 
-                display: grid;
+            font-size: 30px;
 
-                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            color: var(--text);
 
-                gap: 20px;
+        }
 
-                margin-bottom: 35px;
+        /* =========================================
+        MODAL
+        ========================================= */
 
-            }
+        .modal{
 
-            .stat-card{
+            position: fixed;
 
-                background: white;
+            top: 50%;
 
-                border-radius: 24px;
+            left: 50%;
 
-                padding: 24px;
+            transform: translate(-50%, -50%) scale(0.8);
 
-                box-shadow: var(--shadow);
+            width: 90%;
 
-            }
+            max-width: 800px;
 
-            .stat-card h3{
+            background: white;
 
-                color: var(--text-muted);
+            border-radius: 25px;
 
-                font-size: 14px;
+            padding: 30px;
 
-                margin-bottom: 10px;
+            z-index: 9999;
 
-            }
+            opacity: 0;
 
-            .stat-card strong{
+            visibility: hidden;
 
-                font-size: 30px;
+            transition: .3s ease;
 
-                color: var(--text);
+            max-height: 90vh;
 
-            }
+            overflow-y: auto;
+
+        }
+
+        .modal.active{
+
+            opacity: 1;
+
+            visibility: visible;
+
+            transform: translate(-50%, -50%) scale(1);
+
+        }
+
+        .modal-header{
+
+            display: flex;
+
+            justify-content: space-between;
+
+            align-items: center;
+
+            margin-bottom: 25px;
+
+        }
+
+        .modal-header h2{
+
+            font-size: 24px;
+
+        }
+
+        .close-modal{
+
+            background: #f3f4f6;
+
+            border: none;
+
+            width: 40px;
+
+            height: 40px;
+
+            border-radius: 50%;
+
+            cursor: pointer;
+
+            font-size: 18px;
+
+        }
+
+        .modal-image{
+
+            width: 100%;
+
+            max-height: 350px;
+
+            object-fit: cover;
+
+            border-radius: 20px;
+
+            margin-bottom: 20px;
+
+        }
+
+        .modal-grid{
+
+            display: grid;
+
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+
+            gap: 20px;
+
+            margin-top: 20px;
+
+        }
+
+        .modal-box{
+
+            background: #f9fafb;
+
+            padding: 18px;
+
+            border-radius: 18px;
+
+            border: 1px solid #e5e7eb;
+
+        }
+
+        .modal-box span{
+
+            display: block;
+
+            color: #6b7280;
+
+            margin-bottom: 8px;
+
+            font-size: 13px;
+
+        }
+
+        .modal-box strong{
+
+            font-size: 16px;
+
+        }
 
     </style>
 
@@ -383,19 +604,64 @@
 
 <body>
 
-    <!-- OVERLAY -->
-    <div class="overlay" id="overlay"></div>
+<div class="overlay" id="overlay"></div>
 
-    <div class="container">
+<!-- MODAL REPORTE -->
+<div class="modal" id="modalReporte">
 
-        <!-- SIDEBAR -->
-        <aside class="sidebar collapsed" id="sidebar">
+    <div class="modal-header">
+        <h2 id="modalTitulo">Reporte</h2>
+        <button class="close-modal" id="cerrarModal">✕</button>
+    </div>
 
-            <!-- LOGO -->
+    <img src="" id="modalImagen" class="modal-image">
+
+    <p id="modalDescripcion"></p>
+
+    <div class="modal-grid">
+
+        <div class="modal-box">
+            <span>Usuario</span>
+            <strong id="modalUsuario"></strong>
+        </div>
+
+        <div class="modal-box">
+            <span>Propiedad</span>
+            <strong id="modalPropiedad"></strong>
+        </div>
+
+        <div class="modal-box">
+            <span>Tipo</span>
+            <strong id="modalTipo"></strong>
+        </div>
+
+        <div class="modal-box">
+            <span>Prioridad</span>
+            <strong id="modalPrioridad"></strong>
+        </div>
+
+        <div class="modal-box">
+            <span>Estado</span>
+            <strong id="modalEstado"></strong>
+        </div>
+
+        <div class="modal-box">
+            <span>Fecha</span>
+            <strong id="modalFecha"></strong>
+        </div>
+
+    </div>
+</div>
+
+<div class="container">
+
+<!-- SIDEBAR -->
+ <aside class="sidebar collapsed" id="sidebar">
+
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -409,14 +675,12 @@
 
             </div>
 
-            <!-- NAV -->
             <nav class="sidebar-nav">
 
                 <a href="Interface_Trabajadores.php">
 
                     <img 
                         src="../images/icons/Trabajadores_Claro.png"
-                        alt="Trabajadores"
                         class="menu-icon"
                     >
 
@@ -428,7 +692,6 @@
 
                     <img 
                         src="../images/icons/Clientes_Claro.png"
-                        alt="Clientes"
                         class="menu-icon"
                     >
 
@@ -440,7 +703,6 @@
 
                     <img 
                         src="../images/icons/Visitas_Claro.png"
-                        alt="Visitas"
                         class="menu-icon"
                     >
 
@@ -452,7 +714,6 @@
 
                     <img 
                         src="../images/icons/Arrendamiento_Claro.png"
-                        alt="Arrendamiento"
                         class="menu-icon"
                     >
 
@@ -464,7 +725,6 @@
 
                     <img 
                         src="../images/icons/Pago_Claro.png"
-                        alt="Abonos"
                         class="menu-icon"
                     >
 
@@ -476,7 +736,6 @@
 
                     <img 
                         src="../images/icons/Mantenimiento_Claro.png"
-                        alt="Almacen Limpieza"
                         class="menu-icon"
                     >
 
@@ -488,7 +747,6 @@
 
                     <img 
                         src="../images/icons/Reportes_Oscuro.png"
-                        alt="Reportes"
                         class="menu-icon"
                     >
 
@@ -498,7 +756,7 @@
 
             </nav>
 
-            <!-- LOGOUT -->
+                        <!-- LOGOUT -->
             <div class="logout">
 
                 <a href="#">
@@ -517,20 +775,20 @@
 
         </aside>
 
-        <!-- MAIN -->
-        <main class="main-content">
+<!-- MAIN -->
+<main class="main-content">
 
-            <!-- TOPBAR -->
-            <header class="top-bar">
+<!-- TOP BAR-->
+ <header class="top-bar">
 
                 <div>
 
                     <h1>
-                        Gestión de Reportes
+                        Crear Nuevo Reporte
                     </h1>
 
                     <p class="subtitle">
-                        Consulta, filtra y descarga reportes administrativos.
+                        Registra incidencias dentro del sistema.
                     </p>
 
                 </div>
@@ -546,9 +804,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            4
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -556,8 +820,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -568,7 +832,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -579,405 +843,156 @@
 
             </header>
 
-            <!-- FILTROS -->
-            <section class="search-section">
+<!-- FILTROS -->
+<section class="search-section">
 
-                <div class="filters">
+    <div class="filters">
 
-                    <div class="filter-group">
+        <div class="filter-group">
+            <label>Estado</label>
+            <select id="estadoFiltro">
+                <option value="">Todos</option>
+                <option value="Pendiente">Pendientes</option>
+                <option value="Atendido">Atendidos</option>
+                <option value="Cancelado">Cancelados</option>
+            </select>
+        </div>
 
-                        <label>
-                            Estado
-                        </label>
+        <div class="filter-group">
+            <label>Fecha</label>
+            <input type="date" class="date-input" id="fechaFiltro">
+        </div>
 
-                        <select>
+        <div class="search-input-wrapper">
+            <input type="text" placeholder="Buscar Reporte..." id="buscador">
 
-                            <option>
-                                Todos
-                            </option>
+            <a href="Interface_Agregar_Reporte.php" class="btn-search">
+                <img src="../images/icons/Agregar.png" class="button-icon">
+            </a>
+        </div>
 
-                            <option>
-                                Pendientes
-                            </option>
+    </div>
 
-                            <option>
-                                Atendidos
-                            </option>
+</section>
 
-                            <option>
-                                Cancelados
-                            </option>
+<!-- ESTADÍSTICAS -->
+<section class="workers-section">
 
-                        </select>
+<div class="stats-grid">
 
-                    </div>
+    <div class="stat-card">
+        <h3>Pendientes</h3>
+        <strong><?php echo $pendientes; ?></strong>
+    </div>
 
-                    <div class="filter-group">
+    <div class="stat-card">
+        <h3>Atendidos</h3>
+        <strong><?php echo $atendidos; ?></strong>
+    </div>
 
-                        <label>
-                            Fecha
-                        </label>
+    <div class="stat-card">
+        <h3>Cancelados</h3>
+        <strong><?php echo $cancelados; ?></strong>
+    </div>
 
-                        <div class="date-wrapper">
+    <div class="stat-card">
+        <h3>Totales</h3>
+        <strong><?php echo $totalReportes; ?></strong>
+    </div>
 
-                            <input 
-                                type="date"
-                                class="date-input"
-                            >
+</div>
 
-                        </div>
+</section>
 
-                    </div>
+<!-- REPORTES -->
+<section class="workers-section">
 
-                    <div class="search-input-wrapper">
+<div class="reports-grid" id="contenedorReportes">
 
-                        <input 
-                            type="text"
-                            placeholder="Buscar Reporte..."
-                        >
+    <?php foreach ($reportes as $reporte): ?>
 
-                        <a 
-                            href="Interface_Agregar_Reporte.php"
-                            class="btn-search"
-                        >
+    <div class="report-card"
+        data-estado="<?php echo $reporte['Estado']; ?>"
+        data-fecha="<?php echo date('Y-m-d', strtotime($reporte['FechaRegistro'])); ?>">
 
-                            <img 
-                                src="../images/icons/Agregar.png"
-                                alt="Agregar"
-                                class="button-icon"
-                            >
+        <div class="report-header">
 
-                        </a>
+            <div class="report-user">
 
-                    </div>
+                <img src="<?php echo !empty($reporte['ImagenUsuario']) 
+                    ? '../images/person/' . $reporte['ImagenUsuario'] 
+                    : '../images/icons/Usuario.png'; ?>">
 
+                <div>
+                    <h3><?php echo $reporte['Titulo']; ?></h3>
+                    <p>
+                        <?php echo $reporte['NombreUsuario'] . ' ' . $reporte['ApellidoP']; ?>
+                    </p>
                 </div>
 
-            </section>
+            </div>
 
-            <!-- ESTADISTICAS -->
-            <section class="workers-section">
+            <div class="status <?php echo strtolower($reporte['Estado']); ?>">
+                <?php echo $reporte['Estado']; ?>
+            </div>
 
-                <div class="stats-grid">
+        </div>
 
-                    <div class="stat-card">
+        <div class="report-info">
+            <p><?php echo $reporte['Descripcion']; ?></p>
+        </div>
 
-                        <h3>
-                            Reportes Pendientes
-                        </h3>
+        <div class="report-details">
 
-                        <strong>
-                            12
-                        </strong>
+            <div class="detail-box">
+                <span>Fecha</span>
+                <strong><?php echo date("d/m/Y", strtotime($reporte['FechaRegistro'])); ?></strong>
+            </div>
 
-                    </div>
+            <div class="detail-box">
+                <span>Prioridad</span>
+                <strong><?php echo $reporte['Prioridad']; ?></strong>
+            </div>
 
-                    <div class="stat-card">
+        </div>
 
-                        <h3>
-                            Reportes Atendidos
-                        </h3>
+        <div class="report-actions">
 
-                        <strong>
-                            38
-                        </strong>
+            <button class="btn-report btn-view btnVerReporteInfo"
+                data-titulo="<?php echo htmlspecialchars($reporte['Titulo']); ?>"
+                data-descripcion="<?php echo htmlspecialchars($reporte['Descripcion']); ?>"
+                data-usuario="<?php echo htmlspecialchars($reporte['NombreUsuario'].' '.$reporte['ApellidoP']); ?>"
+                data-propiedad="<?php echo htmlspecialchars($reporte['NumeroIdentificador']); ?>"
+                data-tipo="<?php echo htmlspecialchars($reporte['TipoReporte']); ?>"
+                data-prioridad="<?php echo htmlspecialchars($reporte['Prioridad']); ?>"
+                data-estado="<?php echo htmlspecialchars($reporte['Estado']); ?>"
+                data-fecha="<?php echo date('d/m/Y', strtotime($reporte['FechaRegistro'])); ?>">
+                Ver Reporte
+            </button>
 
-                    </div>
+            <button class="btn-report btn-download btnVerEvidencia"
+                data-imagen="<?php echo !empty($reporte['Evidencia']) 
+                    ? '../images/reports/' . $reporte['Evidencia'] 
+                    : '../images/icons/Reportes_Oscuro.png'; ?>">
+                Ver Evidencia
+            </button>
 
-                    <div class="stat-card">
+        </div>
 
-                        <h3>
-                            Reportes Cancelados
-                        </h3>
+    </div>
 
-                        <strong>
-                            5
-                        </strong>
+    <?php endforeach; ?>
 
-                    </div>
+</div>
 
-                    <div class="stat-card">
+</section>
 
-                        <h3>
-                            Reportes Totales
-                        </h3>
+<!-- FOOTER -->
+<footer class="footer">
+    <p>© 2026 DiamondsCorporation. Todos los derechos reservados.</p>
+</footer>
 
-                        <strong>
-                            55
-                        </strong>
-
-                    </div>
-
-                </div>
-
-            </section>
-
-            <!-- REPORTES -->
-            <section class="workers-section">
-
-                <div class="reports-grid">
-
-                    <!-- REPORTE -->
-                    <div class="report-card">
-
-                        <div class="report-header">
-
-                            <div class="report-user">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Reporte"
-                                >
-
-                                <div>
-
-                                    <h3>
-                                        Fuga de Agua
-                                    </h3>
-
-                                    <p>
-                                        Local Comercial #12
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                            <div class="status pending">
-                                Pendiente
-                            </div>
-
-                        </div>
-
-                        <div class="report-info">
-
-                            <p>
-                                Se reportó una fuga de agua en el área del baño principal del local.
-                            </p>
-
-                        </div>
-
-                        <div class="report-details">
-
-                            <div class="detail-box">
-
-                                <span>
-                                    Fecha
-                                </span>
-
-                                <strong>
-                                    08 Mayo 2026
-                                </strong>
-
-                            </div>
-
-                            <div class="detail-box">
-
-                                <span>
-                                    Prioridad
-                                </span>
-
-                                <strong>
-                                    Alta
-                                </strong>
-
-                            </div>
-
-                        </div>
-
-                        <div class="report-actions">
-
-                            <button class="btn-report btn-view">
-                                Ver Reporte
-                            </button>
-
-                            <button class="btn-report btn-download">
-                                Descargar
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <!-- REPORTE -->
-                    <div class="report-card">
-
-                        <div class="report-header">
-
-                            <div class="report-user">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Reporte"
-                                >
-
-                                <div>
-
-                                    <h3>
-                                        Reparación Eléctrica
-                                    </h3>
-
-                                    <p>
-                                        Casa Residencial #4
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                            <div class="status completed">
-                                Atendido
-                            </div>
-
-                        </div>
-
-                        <div class="report-info">
-
-                            <p>
-                                El problema eléctrico fue solucionado y validado por mantenimiento.
-                            </p>
-
-                        </div>
-
-                        <div class="report-details">
-
-                            <div class="detail-box">
-
-                                <span>
-                                    Fecha
-                                </span>
-
-                                <strong>
-                                    05 Mayo 2026
-                                </strong>
-
-                            </div>
-
-                            <div class="detail-box">
-
-                                <span>
-                                    Prioridad
-                                </span>
-
-                                <strong>
-                                    Media
-                                </strong>
-
-                            </div>
-
-                        </div>
-
-                        <div class="report-actions">
-
-                            <button class="btn-report btn-view">
-                                Ver Reporte
-                            </button>
-
-                            <button class="btn-report btn-download">
-                                Descargar
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <!-- REPORTE -->
-                    <div class="report-card">
-
-                        <div class="report-header">
-
-                            <div class="report-user">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Reporte"
-                                >
-
-                                <div>
-
-                                    <h3>
-                                        Problema Legal
-                                    </h3>
-
-                                    <p>
-                                        Edificio Central
-                                    </p>
-
-                                </div>
-
-                            </div>
-
-                            <div class="status cancelled">
-                                Cancelado
-                            </div>
-
-                        </div>
-
-                        <div class="report-info">
-
-                            <p>
-                                El caso fue cerrado después de llegar a un acuerdo con el inquilino.
-                            </p>
-
-                        </div>
-
-                        <div class="report-details">
-
-                            <div class="detail-box">
-
-                                <span>
-                                    Fecha
-                                </span>
-
-                                <strong>
-                                    02 Mayo 2026
-                                </strong>
-
-                            </div>
-
-                            <div class="detail-box">
-
-                                <span>
-                                    Prioridad
-                                </span>
-
-                                <strong>
-                                    Baja
-                                </strong>
-
-                            </div>
-
-                        </div>
-
-                        <div class="report-actions">
-
-                            <button class="btn-report btn-view">
-                                Ver Reporte
-                            </button>
-
-                            <button class="btn-report btn-download">
-                                Descargar
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </section>
-
-            <!-- FOOTER -->
-            <footer class="footer">
-
-                <p>
-                    © 2026 DiamondsCorporation.
-                    Todos los derechos reservados.
-                </p>
-
-            </footer>
-
-            <!-- MODAL NOTIFICACIONES -->
+<!-- MODAL NOTIFICACIONES -->
             <div class="notifications-modal" id="notificationsModal">
 
                 <div class="modal-header">
@@ -994,138 +1009,408 @@
 
                 <div class="notification-list">
 
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nuevo reporte registrado
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró un nuevo reporte pendiente.
-                            </p>
+?>
 
-                            <span>
-                                Hace 5 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Pago pendiente
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Existe un arrendamiento con retraso de pago.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 20 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
 
-            </div>
+        </div>
 
-        </main>
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
 
     </div>
 
-    <!-- SCRIPT -->
-    <script>
+<?php
 
-        const sidebar = document.getElementById('sidebar');
+    }
 
-        const brandToggle = document.getElementById('brandToggle');
+}
+else
+{
 
-        const overlay = document.getElementById('overlay');
+?>
 
-        const notificationWrapper = document.querySelector('.notification-wrapper');
+<p>
+    No hay notificaciones.
+</p>
 
-        const notificationsModal = document.getElementById('notificationsModal');
+<?php } ?>
 
-        const closeModal = document.getElementById('closeModal');
+</div>
 
-        const checkButtons = document.querySelectorAll('.btn-check');
+</div>
 
-        function toggleSidebar() {
+</main>
+</div>
 
-            sidebar.classList.toggle('collapsed');
+<!-- ================= JS CORREGIDO ================= -->
+<script>
 
-            overlay.classList.toggle('active');
+const sidebar = document.getElementById('sidebar');
+const brandToggle = document.getElementById('brandToggle');
+
+const overlay = document.getElementById('overlay');
+
+const modal = document.getElementById('modalReporte');
+const cerrarModal = document.getElementById('cerrarModal');
+
+const notificationsModal = document.getElementById('notificationsModal');
+
+const notificationBtn = document.querySelector('.notification-wrapper');
+const closeNotifications = document.getElementById('closeModal');
+
+const imgModal = document.getElementById('modalImagen');
+const descripcionModal = document.getElementById('modalDescripcion');
+const gridModal = document.querySelector('.modal-grid');
+
+/* =========================================
+   FILTROS
+========================================= */
+
+const buscador = document.getElementById('buscador');
+
+const estadoFiltro = document.getElementById('estadoFiltro');
+
+const fechaFiltro = document.getElementById('fechaFiltro');
+
+const reportCards = document.querySelectorAll('.report-card');
+
+/* =========================================
+   SIDEBAR
+========================================= */
+
+brandToggle.addEventListener('click', () => {
+
+    sidebar.classList.toggle('collapsed');
+
+});
+
+/* =========================================
+   OVERLAY
+========================================= */
+
+overlay.addEventListener('click', () => {
+
+    cerrarTodo();
+
+});
+
+/* =========================================
+   FUNCIÓN CERRAR TODO
+========================================= */
+
+function cerrarTodo() {
+
+    modal.classList.remove('active');
+
+    notificationsModal.classList.remove('active');
+
+    overlay.classList.remove('active');
+
+    imgModal.src = "";
+
+    imgModal.style.display = "block";
+
+    if (descripcionModal) {
+
+        descripcionModal.style.display = "block";
+
+    }
+
+    if (gridModal) {
+
+        gridModal.style.display = "grid";
+
+    }
+
+}
+
+/* =========================================
+   MODAL REPORTE
+========================================= */
+
+cerrarModal.addEventListener('click', cerrarTodo);
+
+/* =========================================
+   EVENTOS GENERALES
+========================================= */
+
+document.addEventListener('click', (e) => {
+
+    /* =====================================
+       VER INFORMACIÓN REPORTE
+    ===================================== */
+
+    if (e.target.classList.contains('btnVerReporteInfo')) {
+
+        const btn = e.target;
+
+        document.getElementById('modalTitulo').innerText =
+            btn.dataset.titulo;
+
+        document.getElementById('modalDescripcion').innerText =
+            btn.dataset.descripcion;
+
+        document.getElementById('modalUsuario').innerText =
+            btn.dataset.usuario;
+
+        document.getElementById('modalPropiedad').innerText =
+            btn.dataset.propiedad;
+
+        document.getElementById('modalTipo').innerText =
+            btn.dataset.tipo;
+
+        document.getElementById('modalPrioridad').innerText =
+            btn.dataset.prioridad;
+
+        document.getElementById('modalEstado').innerText =
+            btn.dataset.estado;
+
+        document.getElementById('modalFecha').innerText =
+            btn.dataset.fecha;
+
+        imgModal.style.display = "none";
+
+        if (descripcionModal) {
+
+            descripcionModal.style.display = "block";
 
         }
 
-        brandToggle.addEventListener('click', toggleSidebar);
+        if (gridModal) {
 
-        overlay.addEventListener('click', () => {
+            gridModal.style.display = "grid";
 
-            overlay.classList.remove('active');
+        }
 
-            sidebar.classList.remove('collapsed');
+        modal.classList.add('active');
 
-            notificationsModal.classList.remove('active');
+        overlay.classList.add('active');
 
-        });
+    }
 
-        /* ==============================
-        MODAL NOTIFICACIONES
+    /* =====================================
+       VER EVIDENCIA
+    ===================================== */
+
+    if (e.target.classList.contains('btnVerEvidencia')) {
+
+        const btn = e.target;
+
+        document.getElementById('modalTitulo').innerText =
+            "Evidencia";
+
+        if (descripcionModal) {
+
+            descripcionModal.style.display = "none";
+
+        }
+
+        if (gridModal) {
+
+            gridModal.style.display = "none";
+
+        }
+
+        imgModal.style.display = "block";
+
+        imgModal.src = btn.dataset.imagen;
+
+        modal.classList.add('active');
+
+        overlay.classList.add('active');
+
+    }
+
+});
+
+/* =========================================
+   MODAL NOTIFICACIONES
+========================================= */
+
+if (notificationBtn) {
+
+    notificationBtn.addEventListener('click', () => {
+
+        notificationsModal.classList.add('active');
+
+        overlay.classList.add('active');
+
+    });
+
+}
+
+if (closeNotifications) {
+
+    closeNotifications.addEventListener('click', cerrarTodo);
+
+}
+
+/* =========================================
+   FILTROS EN TIEMPO REAL
+========================================= */
+
+function filtrarReportes() {
+
+    const texto =
+        buscador.value.toLowerCase().trim();
+
+    const estado =
+        estadoFiltro.value.toLowerCase();
+
+    const fecha =
+        fechaFiltro.value;
+
+    reportCards.forEach(card => {
+
+        /* =============================
+           CONTENIDO GENERAL
         ============================== */
 
-        notificationWrapper.addEventListener('click', () => {
+        const contenido =
+            card.innerText.toLowerCase();
 
-            notificationsModal.classList.add('active');
-
-            overlay.classList.add('active');
-
-        });
-
-        closeModal.addEventListener('click', () => {
-
-            notificationsModal.classList.remove('active');
-
-            overlay.classList.remove('active');
-
-        });
-
-        /* ==============================
-        MARCAR COMO VISTA
+        /* =============================
+           DATASET
         ============================== */
 
-        checkButtons.forEach(button => {
+        const estadoCard =
+            card.dataset.estado.toLowerCase();
 
-            button.addEventListener('click', () => {
+        const fechaCard =
+            card.dataset.fecha;
 
-                const notification = button.parentElement;
+        let visible = true;
 
-                notification.classList.add('completed');
+        /* =============================
+           FILTRO BUSCADOR
+        ============================== */
 
-                button.innerHTML = '✓';
+        if (
+            texto !== "" &&
+            !contenido.includes(texto)
+        ) {
 
-            });
+            visible = false;
 
-        });
+        }
 
-    </script>
+        /* =============================
+           FILTRO ESTADO
+        ============================== */
+
+        if (
+            estado !== "" &&
+            estado !== estadoCard
+        ) {
+
+            visible = false;
+
+        }
+
+        /* =============================
+           FILTRO FECHA
+        ============================== */
+
+        if (
+            fecha !== "" &&
+            fecha !== fechaCard
+        ) {
+
+            visible = false;
+
+        }
+
+        /* =============================
+           MOSTRAR / OCULTAR
+        ============================== */
+
+        card.style.display =
+            visible
+            ? "block"
+            : "none";
+
+    });
+
+}
+
+/* =========================================
+   EVENTOS FILTROS
+========================================= */
+
+/* BUSCADOR TIEMPO REAL */
+
+buscador.addEventListener(
+    'input',
+    filtrarReportes
+);
+
+/* FILTRO ESTADO */
+
+estadoFiltro.addEventListener(
+    'change',
+    filtrarReportes
+);
+
+/* FILTRO FECHA */
+
+fechaFiltro.addEventListener(
+    'change',
+    filtrarReportes
+);
+
+</script>
 
 </body>
 

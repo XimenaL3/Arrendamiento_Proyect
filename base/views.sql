@@ -65,58 +65,6 @@ INNER JOIN Personas P
     ON I.idPersona = P.idPersona;
 
 
--- VISTA: VISUALIZAR VISITAS DE COBRANZA
-
-CREATE VIEW vw_VisitasCobranza AS
-
-SELECT
-
-    VC.idVisita,
-
-    VC.FechaVisita,
-
-    VC.Observaciones,
-
-    -- DATOS DEL COBRADOR
-    U.idUsuario,
-
-    CONCAT(
-        PC.Nombre,
-        ' ',
-        PC.ApellidoP,
-        ' ',
-        IFNULL(PC.ApellidoM,'')
-    ) AS NombreCobrador,
-
-    -- DATOS DEL INQUILINO
-    I.idInquilino,
-
-    CONCAT(
-        PI.Nombre,
-        ' ',
-        PI.ApellidoP,
-        ' ',
-        IFNULL(PI.ApellidoM,'')
-    ) AS NombreInquilino,
-
-    PI.Telefono,
-    PI.Correo
-
-FROM Visitas_Cobranza VC
-
-INNER JOIN Usuarios U
-    ON VC.idUsuario = U.idUsuario
-
-INNER JOIN Personas PC
-    ON U.idPersona = PC.idPersona
-
-INNER JOIN Inquilinos I
-    ON VC.idInquilino = I.idInquilino
-
-INNER JOIN Personas PI
-    ON I.idPersona = PI.idPersona;
-
-
 -- VISTA: VER VISITAS
 
 CREATE VIEW vw_VisitasCobranza AS
@@ -237,141 +185,6 @@ SELECT
 
 FROM Propiedades;
 
--- VISTA: HISTORIAL DE COBROS
-
-CREATE VIEW vw_HistorialCobros AS
-SELECT
-
-    p.idPago,
-
-    perInq.Nombre AS NombreInquilino,
-    perInq.ApellidoP,
-    perInq.ApellidoM,
-
-    pr.NumeroIdentificador,
-    pr.TipoPropiedad,
-
-    pa.MontoPagado,
-    pa.TipoPago,
-    pa.FechaPago,
-
-    ad.MontoPendiente,
-    ad.Estado AS EstadoAdeudo,
-
-    tc.NombreTienda,
-
-    perUsr.Nombre AS NombreCobrador,
-    perUsr.ApellidoP AS ApellidoCobrador,
-
-    pa.idAutorizacion
-
-FROM Pagos pa
-
-INNER JOIN ContratosArrendamiento ca
-    ON pa.idContrato = ca.idContrato
-
-INNER JOIN Inquilinos i
-    ON ca.idInquilino = i.idInquilino
-
-INNER JOIN Personas perInq
-    ON i.idPersona = perInq.idPersona
-
-INNER JOIN Propiedades pr
-    ON ca.idPropiedad = pr.idPropiedad
-
-INNER JOIN Usuarios u
-    ON pa.idUsuario = u.idUsuario
-
-INNER JOIN Personas perUsr
-    ON u.idPersona = perUsr.idPersona
-
-INNER JOIN Tiendas_Cobro tc
-    ON pa.idTienda = tc.idTienda
-
-LEFT JOIN Adeudos ad
-    ON ca.idContrato = ad.idContrato;
-
--- VISTA: SOLICITUDES DE ABONO
-
-CREATE VIEW vw_SolicitudesAbono AS
-SELECT
-
-    aa.idAutorizacion,
-
-    perInq.Nombre AS NombreInquilino,
-    perInq.ApellidoP,
-    perInq.ApellidoM,
-    perInq.Telefono,
-
-    aa.MontoMinimoAceptado,
-    aa.FechaExpiracionAutorizacion,
-
-    perUsr.Nombre AS NombreAutorizador,
-    perUsr.ApellidoP AS ApellidoAutorizador,
-
-    pr.TipoPropiedad,
-    pr.NumeroIdentificador,
-
-    ad.MontoPendiente,
-    ad.FechaLimite,
-    ad.Estado
-
-FROM Autorizaciones_Abono aa
-
-INNER JOIN Inquilinos i
-    ON aa.idInquilino = i.idInquilino
-
-INNER JOIN Personas perInq
-    ON i.idPersona = perInq.idPersona
-
-INNER JOIN Usuarios u
-    ON aa.idUsuario = u.idUsuario
-
-INNER JOIN Personas perUsr
-    ON u.idPersona = perUsr.idPersona
-
-INNER JOIN ContratosArrendamiento ca
-    ON i.idInquilino = ca.idInquilino
-
-INNER JOIN Propiedades pr
-    ON ca.idPropiedad = pr.idPropiedad
-
-LEFT JOIN Adeudos ad
-    ON ca.idContrato = ad.idContrato;
-
--- VISTA: ADEUDOS PENDIENTES
-
-CREATE VIEW vw_AdeudosPendientes AS
-SELECT
-
-    ad.idAdeudo,
-
-    per.Nombre AS NombreInquilino,
-    per.ApellidoP,
-    per.ApellidoM,
-
-    pr.TipoPropiedad,
-    pr.NumeroIdentificador,
-
-    ad.MontoTotal,
-    ad.MontoPendiente,
-    ad.FechaLimite,
-    ad.Estado
-
-FROM Adeudos ad
-
-INNER JOIN ContratosArrendamiento ca
-    ON ad.idContrato = ca.idContrato
-
-INNER JOIN Inquilinos i
-    ON ca.idInquilino = i.idInquilino
-
-INNER JOIN Personas per
-    ON i.idPersona = per.idPersona
-
-INNER JOIN Propiedades pr
-    ON ca.idPropiedad = pr.idPropiedad;
-
 -- VISTA: VER PRODUCTOS
 
 CREATE VIEW vw_Productos AS
@@ -418,15 +231,15 @@ SELECT
     per.ApellidoM,
     per.Imagen AS ImagenUsuario,
 
-    u.Usuario
+    i.idInquilino
 
 FROM Reportes r
 
-INNER JOIN Usuarios u
-    ON r.idUsuario = u.idUsuario
+INNER JOIN Inquilinos i
+    ON r.idInquilino = i.idInquilino
 
 INNER JOIN Personas per
-    ON u.idPersona = per.idPersona
+    ON i.idPersona = per.idPersona
 
 INNER JOIN Propiedades p
     ON r.idPropiedad = p.idPropiedad;
@@ -457,3 +270,331 @@ INNER JOIN Usuarios u
     ON n.idUsuario = u.idUsuario
 INNER JOIN Personas p
     ON u.idPersona = p.idPersona;
+
+
+CREATE VIEW vw_TiendasCobro AS
+
+SELECT
+
+    tc.idTienda,
+
+    tc.NombreTienda,
+
+    p.idPropiedad,
+
+    p.TipoPropiedad,
+
+    p.NumeroIdentificador,
+
+    p.EstadoDisponibilidad
+
+FROM Tiendas_Cobro tc
+
+INNER JOIN Propiedades p
+    ON p.idPropiedad = tc.idPropiedad;
+
+-- =========================================
+-- VISTA:
+-- HISTORIAL COMPLETO DE PAGOS
+-- =========================================
+
+CREATE VIEW vw_HistorialCobros AS
+
+SELECT
+
+    pa.idPago,
+
+    pa.idSolicitud,
+
+    pa.FechaPago,
+
+    pa.MontoPagado,
+
+    pa.TipoPago,
+
+    -- INQUILINO
+    perInq.Nombre AS NombreInquilino,
+    perInq.ApellidoP,
+    perInq.ApellidoM,
+    perInq.Telefono,
+    perInq.Imagen AS ImagenInquilino,
+
+    -- PROPIEDAD
+    pr.TipoPropiedad,
+    pr.NumeroIdentificador,
+
+    -- CONTRATO
+    ca.idContrato,
+
+    -- ADEUDO
+    ad.idAdeudo,
+    ad.MontoTotal,
+    ad.MontoPendiente,
+    ad.Estado AS EstadoAdeudo,
+    ad.FechaLimite,
+
+    -- TIENDA
+    tc.NombreTienda,
+
+    -- COBRADOR
+    perCob.Nombre AS NombreCobrador,
+    perCob.ApellidoP AS ApellidoCobrador,
+
+    -- SOLICITUD
+    sa.EstadoSolicitud
+
+FROM Pagos pa
+
+INNER JOIN ContratosArrendamiento ca
+    ON pa.idContrato = ca.idContrato
+
+INNER JOIN Inquilinos i
+    ON ca.idInquilino = i.idInquilino
+
+INNER JOIN Personas perInq
+    ON i.idPersona = perInq.idPersona
+
+INNER JOIN Propiedades pr
+    ON ca.idPropiedad = pr.idPropiedad
+
+INNER JOIN Usuarios uCob
+    ON pa.idUsuario = uCob.idUsuario
+
+INNER JOIN Personas perCob
+    ON uCob.idPersona = perCob.idPersona
+
+INNER JOIN Tiendas_Cobro tc
+    ON pa.idTienda = tc.idTienda
+
+LEFT JOIN Adeudos ad
+    ON ca.idContrato = ad.idContrato
+
+LEFT JOIN Solicitudes_Abono sa
+    ON pa.idSolicitud = sa.idSolicitud;
+
+-- =========================================
+-- VISTA:
+-- SOLICITUDES DE ABONO
+-- =========================================
+
+CREATE VIEW vw_SolicitudesAbono AS
+
+SELECT
+
+    sa.idSolicitud,
+
+    sa.idContrato,
+
+    sa.idInquilino,
+
+    sa.idUsuarioSolicita,
+
+    sa.idAdministrador,
+
+    sa.MontoSolicitado,
+
+    sa.MontoAutorizado,
+
+    sa.FechaLimitePago,
+
+    sa.Observaciones,
+
+    sa.EstadoSolicitud,
+
+    sa.FechaSolicitud,
+
+    sa.FechaRevision,
+
+    -- INQUILINO
+    perInq.Nombre AS NombreInquilino,
+    perInq.ApellidoP,
+    perInq.ApellidoM,
+    perInq.Telefono,
+    perInq.Imagen AS ImagenInquilino,
+
+    -- PROPIEDAD
+    pr.TipoPropiedad,
+    pr.NumeroIdentificador,
+
+    -- ADEUDO
+    ad.idAdeudo,
+    ad.MontoTotal,
+    ad.MontoPendiente,
+    ad.FechaLimite,
+    ad.Estado AS EstadoAdeudo,
+
+    -- USUARIO SOLICITANTE
+    perSol.Nombre AS NombreSolicitante,
+    perSol.ApellidoP AS ApellidoSolicitante,
+
+    -- ADMINISTRADOR
+    perAdm.Nombre AS NombreAdministrador,
+    perAdm.ApellidoP AS ApellidoAdministrador
+
+FROM Solicitudes_Abono sa
+
+INNER JOIN Inquilinos i
+    ON sa.idInquilino = i.idInquilino
+
+INNER JOIN Personas perInq
+    ON i.idPersona = perInq.idPersona
+
+INNER JOIN ContratosArrendamiento ca
+    ON sa.idContrato = ca.idContrato
+
+INNER JOIN Propiedades pr
+    ON ca.idPropiedad = pr.idPropiedad
+
+LEFT JOIN Adeudos ad
+    ON sa.idContrato = ad.idContrato
+    AND ad.Estado = 'Pendiente'
+
+INNER JOIN Usuarios uSol
+    ON sa.idUsuarioSolicita = uSol.idUsuario
+
+INNER JOIN Personas perSol
+    ON uSol.idPersona = perSol.idPersona
+
+LEFT JOIN Usuarios uAdm
+    ON sa.idAdministrador = uAdm.idUsuario
+
+LEFT JOIN Personas perAdm
+    ON uAdm.idPersona = perAdm.idPersona;
+
+-- =========================================
+-- VISTA:
+-- ADEUDOS PENDIENTES
+-- =========================================
+
+CREATE VIEW vw_AdeudosPendientes AS
+
+SELECT
+
+    ad.idAdeudo,
+
+    ad.idContrato,
+
+    ad.MontoTotal,
+
+    ad.MontoPendiente,
+
+    ad.FechaLimite,
+
+    ad.PermitirAbonos,
+
+    ad.Estado,
+
+    -- INQUILINO
+    per.Nombre AS NombreInquilino,
+    per.ApellidoP,
+    per.ApellidoM,
+    per.Telefono,
+    per.Imagen,
+
+    -- PROPIEDAD
+    pr.TipoPropiedad,
+    pr.NumeroIdentificador,
+
+    -- CONTRATO
+    ca.FechaInicio,
+    ca.FechaFin,
+    ca.MontoRenta
+
+FROM Adeudos ad
+
+INNER JOIN ContratosArrendamiento ca
+    ON ad.idContrato = ca.idContrato
+
+INNER JOIN Inquilinos i
+    ON ca.idInquilino = i.idInquilino
+
+INNER JOIN Personas per
+    ON i.idPersona = per.idPersona
+
+INNER JOIN Propiedades pr
+    ON ca.idPropiedad = pr.idPropiedad
+
+WHERE ad.Estado = 'Pendiente';
+
+-- =========================================
+-- VISTA:
+-- HISTORIAL DE APROBACIONES
+-- =========================================
+
+CREATE VIEW vw_HistorialSolicitudesAbono AS
+
+SELECT
+
+    ha.idHistorial,
+
+    ha.idSolicitud,
+
+    ha.Accion,
+
+    ha.Comentario,
+
+    ha.FechaMovimiento,
+
+    -- SOLICITUD
+    sa.MontoSolicitado,
+    sa.MontoAutorizado,
+    sa.EstadoSolicitud,
+
+    -- INQUILINO
+    perInq.Nombre AS NombreInquilino,
+    perInq.ApellidoP,
+    perInq.ApellidoM,
+
+    -- PROPIEDAD
+    pr.TipoPropiedad,
+    pr.NumeroIdentificador,
+
+    -- ADMINISTRADOR
+    perAdm.Nombre AS NombreAdministrador,
+    perAdm.ApellidoP AS ApellidoAdministrador
+
+FROM Historial_Aprobaciones_Abono ha
+
+INNER JOIN Solicitudes_Abono sa
+    ON ha.idSolicitud = sa.idSolicitud
+
+INNER JOIN Inquilinos i
+    ON sa.idInquilino = i.idInquilino
+
+INNER JOIN Personas perInq
+    ON i.idPersona = perInq.idPersona
+
+INNER JOIN ContratosArrendamiento ca
+    ON sa.idContrato = ca.idContrato
+
+INNER JOIN Propiedades pr
+    ON ca.idPropiedad = pr.idPropiedad
+
+INNER JOIN Usuarios uAdm
+    ON ha.idAdministrador = uAdm.idUsuario
+
+INNER JOIN Personas perAdm
+    ON uAdm.idPersona = perAdm.idPersona;
+
+CREATE OR REPLACE VIEW vw_abonos_adeudos AS
+SELECT 
+    a.idAdeudo,
+    a.MontoTotal,
+    a.MontoPendiente,
+    a.FechaLimite,
+    a.Estado,
+
+    c.idContrato,
+    c.idPropiedad,
+
+    i.idInquilino,
+    CONCAT(p.Nombre, ' ', p.ApellidoP) AS Inquilino,
+    p.Imagen AS ImagenInquilino,
+
+    pr.NumeroIdentificador AS Propiedad
+
+FROM Adeudos a
+INNER JOIN ContratosArrendamiento c ON a.idContrato = c.idContrato
+INNER JOIN Inquilinos i ON c.idInquilino = i.idInquilino
+INNER JOIN Personas p ON i.idPersona = p.idPersona
+INNER JOIN Propiedades pr ON c.idPropiedad = pr.idPropiedad;

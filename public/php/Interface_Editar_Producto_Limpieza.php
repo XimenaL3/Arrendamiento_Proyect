@@ -1,16 +1,291 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+/* =========================================
+OBTENER ID DEL PRODUCTO
+========================================= */
+
+if(!isset($_GET['id']))
+{
+    die("ID de producto no válido");
+}
+
+$idProducto = $_GET['id'];
+
+/* =========================================
+OBTENER DATOS DEL PRODUCTO
+========================================= */
+
+$sql = "SELECT * FROM vw_Productos WHERE idProducto = ?";
+
+$stmt = $conn->prepare($sql);
+
+$stmt->bind_param("i", $idProducto);
+
+$stmt->execute();
+
+$resultado = $stmt->get_result();
+
+if($resultado->num_rows == 0)
+{
+    die("Producto no encontrado");
+}
+
+$producto = $resultado->fetch_assoc();
+
+/* =========================================
+ACTUALIZAR PRODUCTO
+========================================= */
+
+$mensaje = "";
+
+if($_SERVER["REQUEST_METHOD"] == "POST")
+{
+
+    $nombreProducto = $_POST['nombre_producto'];
+
+    $cantidadDisponible = $_POST['cantidad_disponible'];
+
+    $descripcion = $_POST['descripcion'];
+
+    $imagenActual = $producto['Imagen'];
+
+    /* =========================================
+    SUBIR NUEVA IMAGEN
+    ========================================= */
+
+    if(isset($_FILES['imagen']) && $_FILES['imagen']['error'] == 0)
+    {
+
+        $directorio = "../../images/products/";
+
+        if(!is_dir($directorio))
+        {
+            mkdir($directorio, 0777, true);
+        }
+
+        $nombreImagen = time() . "_" . basename($_FILES["imagen"]["name"]);
+
+        $rutaDestino = $directorio . $nombreImagen;
+
+        if(move_uploaded_file($_FILES["imagen"]["tmp_name"], $rutaDestino))
+        {
+
+            $imagenActual = "images/products/" . $nombreImagen;
+
+        }
+
+    }
+
+    /* =========================================
+    PROCEDIMIENTO ALMACENADO
+    ========================================= */
+
+    $sqlEditar = "CALL sp_EditarProducto(?, ?, ?, ?, ?)";
+
+    $stmtEditar = mysqli_prepare($conn, $sqlEditar);
+
+    mysqli_stmt_bind_param(
+        $stmtEditar,
+        "isiss",
+        $idProducto,
+        $nombreProducto,
+        $cantidadDisponible,
+        $descripcion,
+        $imagenActual
+    );
+
+    if(mysqli_stmt_execute($stmtEditar))
+    {
+        header("Location: Interface_Productos_Limpieza.php");
+        exit();
+    }
+    else
+    {
+        echo "Error al actualizar: " . mysqli_error($conn);
+    }
+
+    mysqli_stmt_close($stmtEditar);
+
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Editar Producto</title>
+    <meta 
+        name="viewport" 
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Editar Producto
+    </title>
 
     <!-- CSS -->
-    <link rel="stylesheet" href="../css/style.css">
-    <link rel="stylesheet" href="../css/Estilo_Edicion.css">
+    <link 
+        rel="stylesheet" 
+        href="../css/style.css"
+    >
+
+    <link 
+        rel="stylesheet" 
+        href="../css/Estilo_Edicion.css"
+    >
+
+    <style>
+
+        .message{
+
+            width: 100%;
+
+            padding: 14px;
+
+            margin-bottom: 20px;
+
+            border-radius: 12px;
+
+            background: #fee2e2;
+
+            color: #991b1b;
+
+            font-weight: bold;
+
+            text-align: center;
+
+        }
+
+    </style>
 
 </head>
 
@@ -28,7 +303,7 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -36,6 +311,7 @@
                 <div class="brand-text">
 
                     <h2>Sunlight Gardens</h2>
+
                     <span>Panel Administrativo</span>
 
                 </div>
@@ -179,9 +455,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            2
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -189,8 +471,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -201,7 +483,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -217,23 +499,34 @@
 
                 <div class="edit-card">
 
+                    <?php if($mensaje != ""): ?>
+
+                        <div class="message">
+
+                            <?php echo $mensaje; ?>
+
+                        </div>
+
+                    <?php endif; ?>
+
                     <!-- FOTO -->
                     <div class="profile-edit">
 
                         <img 
-                            src="../images/icons/Usuario.png"
+                            src="../../<?php echo $producto['Imagen']; ?>"
                             alt="Producto"
                             class="edit-avatar"
+                            id="previewImagen"
                         >
-
-                        <button class="change-photo-btn">
-                            Cambiar Imagen
-                        </button>
 
                     </div>
 
                     <!-- FORM -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                        enctype="multipart/form-data"
+                    >
 
                         <div class="form-grid">
 
@@ -246,65 +539,10 @@
 
                                 <input 
                                     type="text"
-                                    value="Desinfectante Multiusos"
+                                    name="nombre_producto"
+                                    value="<?php echo $producto['NombreProducto']; ?>"
+                                    required
                                 >
-
-                            </div>
-
-                            <!-- CODIGO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Código del Producto
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    value="LMP-204"
-                                >
-
-                            </div>
-
-                            <!-- PRECIO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Precio
-                                </label>
-
-                                <input 
-                                    type="number"
-                                    value="149"
-                                >
-
-                            </div>
-
-                            <!-- CATEGORIA -->
-                            <div class="input-group">
-
-                                <label>
-                                    Categoría
-                                </label>
-
-                                <select>
-
-                                    <option>
-                                        Limpieza
-                                    </option>
-
-                                    <option selected>
-                                        Desinfectantes
-                                    </option>
-
-                                    <option>
-                                        Jardinería
-                                    </option>
-
-                                    <option>
-                                        Herramientas
-                                    </option>
-
-                                </select>
 
                             </div>
 
@@ -312,26 +550,30 @@
                             <div class="input-group">
 
                                 <label>
-                                    Cantidad en Stock
+                                    Cantidad Disponible
                                 </label>
 
                                 <input 
                                     type="number"
-                                    value="120"
+                                    name="cantidad_disponible"
+                                    value="<?php echo $producto['CantidadDisponible']; ?>"
+                                    required
                                 >
 
                             </div>
 
-                            <!-- PROVEEDOR -->
-                            <div class="input-group">
+                            <!-- IMAGEN -->
+                            <div class="input-group full-width">
 
                                 <label>
-                                    Proveedor
+                                    Cambiar Imagen
                                 </label>
 
                                 <input 
-                                    type="text"
-                                    value="CleanPro México"
+                                    type="file"
+                                    name="imagen"
+                                    accept="image/*"
+                                    id="imagenInput"
                                 >
 
                             </div>
@@ -343,11 +585,11 @@
                                     Descripción
                                 </label>
 
-                                <textarea rows="5">
-
-Producto especializado para limpieza profunda y eliminación de bacterias en distintas superficies.
-
-                                </textarea>
+                                <textarea 
+                                    rows="5"
+                                    name="descripcion"
+                                    required
+                                ><?php echo $producto['Descripcion']; ?></textarea>
 
                             </div>
 
@@ -356,11 +598,18 @@ Producto especializado para limpieza profunda y eliminación de bacterias en dis
                         <!-- BUTTONS -->
                         <div class="form-buttons">
 
-                            <button type="button" class="btn-cancel">
+                            <a 
+                                href="Interface_Productos_Limpieza.php"
+                                class="btn-cancel"
+                                style="text-decoration:none;"
+                            >
                                 Cancelar
-                            </button>
+                            </a>
 
-                            <button type="submit" class="btn-save">
+                            <button 
+                                type="submit"
+                                class="btn-save"
+                            >
                                 Guardar Cambios
                             </button>
 
@@ -399,55 +648,85 @@ Producto especializado para limpieza profunda y eliminación de bacterias en dis
 
                 <div class="notification-list">
 
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nuevo reporte registrado
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró un nuevo reporte pendiente.
-                            </p>
+?>
 
-                            <span>
-                                Hace 5 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Pago pendiente
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Existe un arrendamiento con retraso de pago.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 20 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -472,7 +751,8 @@ Producto especializado para limpieza profunda y eliminación de bacterias en dis
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
+        function toggleSidebar()
+        {
 
             sidebar.classList.toggle('collapsed');
 
@@ -482,13 +762,12 @@ Producto especializado para limpieza profunda y eliminación de bacterias en dis
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
+        overlay.addEventListener('click', () =>
+        {
 
             overlay.classList.remove('active');
 
             sidebar.classList.remove('collapsed');
-
-            notificationsModal.classList.remove('active');
 
         });
 
@@ -513,20 +792,97 @@ Producto especializado para limpieza profunda y eliminación de bacterias en dis
         });
 
         /* ==============================
-        MARCAR COMO VISTA
+        MARCAR NOTIFICACIÓN
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
+
+        });
+
+        /* =========================================
+        PREVISUALIZAR IMAGEN
+        ========================================= */
+
+        const imagenInput = document.getElementById('imagenInput');
+
+        const previewImagen = document.getElementById('previewImagen');
+
+        imagenInput.addEventListener('change', function(e)
+        {
+
+            const archivo = e.target.files[0];
+
+            if(archivo)
+            {
+
+                const reader = new FileReader();
+
+                reader.onload = function(evento)
+                {
+
+                    previewImagen.src = evento.target.result;
+
+                }
+
+                reader.readAsDataURL(archivo);
+
+            }
 
         });
 

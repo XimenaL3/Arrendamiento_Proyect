@@ -6,9 +6,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>
-        Crear Reporte
-    </title>
+    <title>Registrar Cobro</title>
 
     <!-- CSS -->
     <link rel="stylesheet" href="../css/style.css">
@@ -16,255 +14,100 @@
 
     <style>
 
-        .status-badge{
+        .status-badge {
 
             display: inline-block;
-
             padding: 8px 14px;
-
-            border-radius: 12px;
-
-            background: #fef3c7;
-
-            color: #92400e;
-
+            border-radius: 10px;
+            background: #dcfce7;
+            color: #166534;
             font-size: 13px;
-
             font-weight: 600;
 
         }
 
-        .section-subtitle{
+        .section-subtitle {
 
             margin-top: 30px;
-
             margin-bottom: 20px;
-
             font-size: 18px;
-
-            color: #111827;
-
-            font-weight: 700;
+            color: #374151;
+            font-weight: 600;
 
         }
 
-        .upload-box{
+        .upload-box {
 
-            border: 2px dashed #d1d5db;
-
-            border-radius: 18px;
-
-            padding: 35px;
-
+            border: 2px dashed #cbd5e1;
+            border-radius: 14px;
+            padding: 30px;
             text-align: center;
-
-            background: #f9fafb;
-
-            transition: .3s ease;
+            background: #f8fafc;
+            transition: 0.3s;
 
         }
 
-        .upload-box:hover{
+        .upload-box:hover {
 
-            border-color: #111827;
-
+            border-color: #111111;
             background: #f3f4f6;
 
         }
 
-        .upload-box p{
+        .upload-box p {
 
-            margin-top: 12px;
-
-            color: #6b7280;
-
-            font-size: 14px;
+            color: #64748b;
+            margin-top: 10px;
 
         }
 
-        .priority-box{
+        .info-card {
 
-            display: flex;
-
-            gap: 14px;
-
-            flex-wrap: wrap;
-
-        }
-
-        .priority-card{
-
-            flex: 1;
-
-            min-width: 150px;
-
-            padding: 18px;
-
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
             border-radius: 16px;
-
-            border: 1px solid #e5e7eb;
-
-            background: #f9fafb;
-
-            cursor: pointer;
-
-            transition: .3s ease;
+            padding: 20px;
+            margin-top: 25px;
 
         }
 
-        .priority-card:hover{
+        .info-card h4 {
 
-            transform: translateY(-3px);
-
-        }
-
-        .priority-card h4{
-
-            margin-bottom: 8px;
-
-            font-size: 15px;
-
-            color: #111827;
+            margin-bottom: 15px;
+            color: #1e293b;
 
         }
 
-        .priority-card p{
-
-            font-size: 13px;
-
-            color: #6b7280;
-
-        }
-
-        .priority-high{
-
-            border-left: 5px solid #dc2626;
-
-        }
-
-        .priority-medium{
-
-            border-left: 5px solid #f59e0b;
-
-        }
-
-        .priority-low{
-
-            border-left: 5px solid #10b981;
-
-        }
-
-        .info-card{
-
-            margin-top: 30px;
-
-            background: #ffffff;
-
-            border-radius: 22px;
-
-            border: 1px solid #e5e7eb;
-
-            padding: 24px;
-
-            box-shadow: 0 10px 25px rgba(0,0,0,.05);
-
-        }
-
-        .info-card h3{
-
-            margin-bottom: 20px;
-
-            color: #111827;
-
-        }
-
-        .info-grid{
+        .info-grid {
 
             display: grid;
-
             grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-
             gap: 18px;
 
         }
 
-        .info-item{
+        .info-item {
 
-            background: #f9fafb;
-
-            border-radius: 16px;
-
-            padding: 18px;
-
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
             border: 1px solid #e5e7eb;
 
         }
 
-        .info-item span{
+        .info-item span {
 
             display: block;
-
             font-size: 13px;
-
-            color: #6b7280;
-
+            color: #64748b;
             margin-bottom: 8px;
 
         }
 
-        .info-item strong{
-
-            font-size: 16px;
+        .info-item strong {
 
             color: #111827;
-
-        }
-
-        .details-box{
-
-            display: flex;
-
-            gap: 16px;
-
-            flex-wrap: wrap;
-
-            margin-top: 20px;
-
-        }
-
-        .detail-card{
-
-            flex: 1;
-
-            min-width: 200px;
-
-            background: #f9fafb;
-
-            border: 1px solid #e5e7eb;
-
-            border-radius: 16px;
-
-            padding: 18px;
-
-        }
-
-        .detail-card h4{
-
-            margin-bottom: 10px;
-
-            color: #111827;
-
             font-size: 15px;
-
-        }
-
-        .detail-card p{
-
-            color: #6b7280;
-
-            font-size: 14px;
-
-            line-height: 1.6;
 
         }
 
@@ -286,7 +129,7 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -303,10 +146,10 @@
             <!-- NAV -->
             <nav class="sidebar-nav">
 
-                <a href="Interface_Cobros.php">
+                <a href="Interface_Cobros.php" class="active">
 
                     <img 
-                        src="../images/icons/Pago_Claro.png"
+                        src="../images/icons/Pago_Oscuro.png"
                         alt="Abonos"
                         class="menu-icon"
                     >
@@ -315,10 +158,10 @@
 
                 </a>
 
-                <a href="Interface_Reportes_C.php" class="active">
+                <a href="Interface_Reportes_C.php">
 
                     <img 
-                        src="../images/icons/Reportes_Oscuro.png"
+                        src="../images/icons/Reportes_Claro.png"
                         alt="Reportes"
                         class="menu-icon"
                     >
@@ -357,11 +200,11 @@
                 <div>
 
                     <h1>
-                        Crear Nuevo Reporte
+                        Registrar Cobro
                     </h1>
 
                     <p class="subtitle">
-                        Registra incidencias, problemas o solicitudes dentro del sistema.
+                        Realiza cobros de renta y genera comprobantes de pago.
                     </p>
 
                 </div>
@@ -388,7 +231,7 @@
 
                         <img 
                             src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            alt="Cajero"
                             class="avatar-admin"
                         >
 
@@ -399,7 +242,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                Carlos Ramírez
                             </strong>
 
                         </div>
@@ -419,91 +262,134 @@
                     <div class="profile-edit">
 
                         <img 
-                            src="../images/icons/Reportes_Oscuro.png"
-                            alt="Reporte"
+                            src="../images/icons/Pago_Claro.png"
+                            alt="Cobro"
                             class="edit-avatar"
                         >
 
                         <button class="change-photo-btn">
-                            Subir Evidencia
+                            Subir Comprobante
                         </button>
 
                         <div style="margin-top: 15px;">
 
                             <span class="status-badge">
-                                Reporte Pendiente
+                                Cobro Disponible
                             </span>
 
                         </div>
 
                     </div>
 
-                    <!-- FORM -->
+                    <!-- FORMULARIO -->
                     <form class="edit-form">
 
                         <h3 class="section-subtitle">
-                            Información General
+                            Información del Cliente
                         </h3>
 
                         <div class="form-grid">
 
-                            <!-- TITULO -->
+                            <!-- NOMBRE -->
                             <div class="input-group">
 
                                 <label>
-                                    Título del Reporte
+                                    Nombre del Cliente
                                 </label>
 
                                 <input 
                                     type="text"
-                                    placeholder="Ejemplo: Fuga de agua"
+                                    placeholder="Ejemplo: Andrea López"
                                 >
 
                             </div>
 
-                            <!-- TIPO -->
+                            <!-- PROPIEDAD -->
                             <div class="input-group">
 
                                 <label>
-                                    Tipo de Reporte
+                                    Propiedad
                                 </label>
 
                                 <select>
 
                                     <option selected disabled>
-                                        Selecciona una opción
+                                        Selecciona una propiedad
                                     </option>
 
                                     <option>
-                                        Mantenimiento
+                                        Casa Residencial #4
                                     </option>
 
                                     <option>
-                                        Seguridad
+                                        Local Comercial #7
                                     </option>
 
                                     <option>
-                                        Legal
-                                    </option>
-
-                                    <option>
-                                        Limpieza
+                                        Edificio Central
                                     </option>
 
                                 </select>
 
                             </div>
 
-                            <!-- UBICACION -->
+                            <!-- TELEFONO -->
                             <div class="input-group">
 
                                 <label>
-                                    Ubicación
+                                    Número Telefónico
                                 </label>
 
                                 <input 
                                     type="text"
-                                    placeholder="Ejemplo: Local Comercial #12"
+                                    placeholder="+52 418 000 0000"
+                                >
+
+                            </div>
+
+                            <!-- ESTADO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Estado del Pago
+                                </label>
+
+                                <select>
+
+                                    <option>
+                                        Pendiente
+                                    </option>
+
+                                    <option>
+                                        Parcial
+                                    </option>
+
+                                    <option>
+                                        Liquidado
+                                    </option>
+
+                                </select>
+
+                            </div>
+
+                        </div>
+
+                        <h3 class="section-subtitle">
+                            Información del Cobro
+                        </h3>
+
+                        <div class="form-grid">
+
+                            <!-- MONTO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Monto a Cobrar
+                                </label>
+
+                                <input 
+                                    type="number"
+                                    placeholder="$0.00"
                                 >
 
                             </div>
@@ -512,90 +398,81 @@
                             <div class="input-group">
 
                                 <label>
-                                    Fecha del Reporte
+                                    Fecha del Cobro
                                 </label>
 
-                                <input type="date">
+                                <input 
+                                    type="date"
+                                >
+
+                            </div>
+
+                            <!-- METODO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Método de Pago
+                                </label>
+
+                                <select>
+
+                                    <option>
+                                        Efectivo
+                                    </option>
+
+                                    <option>
+                                        Transferencia
+                                    </option>
+
+                                    <option>
+                                        Tarjeta
+                                    </option>
+
+                                </select>
+
+                            </div>
+
+                            <!-- REFERENCIA -->
+                            <div class="input-group">
+
+                                <label>
+                                    Referencia
+                                </label>
+
+                                <input 
+                                    type="text"
+                                    placeholder="Número de referencia"
+                                >
 
                             </div>
 
                         </div>
 
                         <h3 class="section-subtitle">
-                            Nivel de Prioridad
-                        </h3>
-
-                        <div class="priority-box">
-
-                            <div class="priority-card priority-high">
-
-                                <h4>
-                                    Alta
-                                </h4>
-
-                                <p>
-                                    Problemas urgentes o riesgos importantes.
-                                </p>
-
-                            </div>
-
-                            <div class="priority-card priority-medium">
-
-                                <h4>
-                                    Media
-                                </h4>
-
-                                <p>
-                                    Situaciones importantes pero no críticas.
-                                </p>
-
-                            </div>
-
-                            <div class="priority-card priority-low">
-
-                                <h4>
-                                    Baja
-                                </h4>
-
-                                <p>
-                                    Solicitudes menores o informativas.
-                                </p>
-
-                            </div>
-
-                        </div>
-
-                        <h3 class="section-subtitle">
-                            Descripción del Problema
+                            Información Adicional
                         </h3>
 
                         <div class="form-grid">
 
+                            <!-- OBSERVACIONES -->
                             <div class="input-group full-width">
 
                                 <label>
-                                    Detalles del Reporte
+                                    Observaciones
                                 </label>
 
                                 <textarea 
-                                    rows="6"
-                                    placeholder="Describe el problema, situación o solicitud..."
+                                    rows="5"
+                                    placeholder="Agrega comentarios, notas o información importante sobre el cobro..."
                                 ></textarea>
 
                             </div>
 
-                        </div>
-
-                        <h3 class="section-subtitle">
-                            Evidencias
-                        </h3>
-
-                        <div class="form-grid">
-
+                            <!-- COMPROBANTE -->
                             <div class="input-group full-width">
 
                                 <label>
-                                    Subir Fotografías o Archivos
+                                    Subir Comprobante
                                 </label>
 
                                 <div class="upload-box">
@@ -603,11 +480,11 @@
                                     <img 
                                         src="../images/icons/Agregar.png"
                                         alt="Upload"
-                                        width="55"
+                                        width="50"
                                     >
 
                                     <p>
-                                        Arrastra imágenes o documentos aquí
+                                        Arrastra imágenes o comprobantes aquí
                                     </p>
 
                                 </div>
@@ -619,11 +496,35 @@
                         <!-- RESUMEN -->
                         <div class="info-card">
 
-                            <h3>
-                                Resumen del Reporte
-                            </h3>
+                            <h4>
+                                Resumen del Cobro
+                            </h4>
 
                             <div class="info-grid">
+
+                                <div class="info-item">
+
+                                    <span>
+                                        Adeudo Actual
+                                    </span>
+
+                                    <strong>
+                                        $12,000 MXN
+                                    </strong>
+
+                                </div>
+
+                                <div class="info-item">
+
+                                    <span>
+                                        Último Pago
+                                    </span>
+
+                                    <strong>
+                                        02 Mayo 2026
+                                    </strong>
+
+                                </div>
 
                                 <div class="info-item">
 
@@ -640,77 +541,12 @@
                                 <div class="info-item">
 
                                     <span>
-                                        Prioridad
+                                        Historial
                                     </span>
 
                                     <strong>
-                                        Alta
+                                        5 Cobros Registrados
                                     </strong>
-
-                                </div>
-
-                                <div class="info-item">
-
-                                    <span>
-                                        Responsable
-                                    </span>
-
-                                    <strong>
-                                        Área de Mantenimiento
-                                    </strong>
-
-                                </div>
-
-                                <div class="info-item">
-
-                                    <span>
-                                        Fecha de Registro
-                                    </span>
-
-                                    <strong>
-                                        09 Mayo 2026
-                                    </strong>
-
-                                </div>
-
-                            </div>
-
-                            <!-- DETALLES -->
-                            <div class="details-box">
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Observaciones
-                                    </h4>
-
-                                    <p>
-                                        El reporte será revisado por el administrador encargado.
-                                    </p>
-
-                                </div>
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Tiempo Estimado
-                                    </h4>
-
-                                    <p>
-                                        Aproximadamente 24 a 48 horas para respuesta inicial.
-                                    </p>
-
-                                </div>
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Seguimiento
-                                    </h4>
-
-                                    <p>
-                                        El estado del reporte podrá actualizarse desde el panel principal.
-                                    </p>
 
                                 </div>
 
@@ -726,7 +562,7 @@
                             </button>
 
                             <button type="submit" class="btn-save">
-                                Registrar Reporte
+                                Registrar Cobro
                             </button>
 
                         </div>
@@ -769,11 +605,11 @@
                         <div class="notification-info">
 
                             <h4>
-                                Nuevo reporte registrado
+                                Nuevo pago registrado
                             </h4>
 
                             <p>
-                                Se registró un nuevo reporte pendiente.
+                                Se registró un nuevo cobro exitosamente.
                             </p>
 
                             <span>
@@ -793,15 +629,15 @@
                         <div class="notification-info">
 
                             <h4>
-                                Pago pendiente
+                                Cobro pendiente
                             </h4>
 
                             <p>
-                                Existe un arrendamiento con retraso de pago.
+                                Existe un pago pendiente por validar.
                             </p>
 
                             <span>
-                                Hace 20 minutos
+                                Hace 15 minutos
                             </span>
 
                         </div>
@@ -837,6 +673,10 @@
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
+        /* =========================
+        SIDEBAR
+        ========================= */
+
         function toggleSidebar() {
 
             sidebar.classList.toggle('collapsed');
@@ -847,19 +687,9 @@
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
-
-            overlay.classList.remove('active');
-
-            sidebar.classList.remove('collapsed');
-
-            notificationsModal.classList.remove('active');
-
-        });
-
-        /* ==============================
+        /* =========================
         MODAL NOTIFICACIONES
-        ============================== */
+        ========================= */
 
         notificationWrapper.addEventListener('click', () => {
 
@@ -877,9 +707,17 @@
 
         });
 
-        /* ==============================
+        overlay.addEventListener('click', () => {
+
+            notificationsModal.classList.remove('active');
+
+            overlay.classList.remove('active');
+
+        });
+
+        /* =========================
         MARCAR COMO VISTA
-        ============================== */
+        ========================= */
 
         checkButtons.forEach(button => {
 
@@ -888,8 +726,6 @@
                 const notification = button.parentElement;
 
                 notification.classList.add('completed');
-
-                button.innerHTML = '✓';
 
             });
 

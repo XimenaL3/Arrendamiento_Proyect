@@ -1,9 +1,270 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+// ==============================
+// VALIDAR ID
+// ==============================
+
+if(!isset($_GET['id']) || empty($_GET['id']))
+{
+    header("Location: Interface_Trabajadores.php");
+    exit();
+}
+
+$idUsuario = intval($_GET['id']);
+
+// ==============================
+// OBTENER DATOS DEL TRABAJADOR
+// ==============================
+
+$sqlTrabajador = "
+SELECT 
+    U.idUsuario,
+    U.Usuario,
+    U.Contrasena,
+    U.idRol,
+
+    P.Nombre,
+    P.ApellidoP,
+    P.ApellidoM,
+    P.Telefono,
+    P.Correo,
+    P.Imagen,
+
+    R.NombreRol
+
+FROM Usuarios U
+
+INNER JOIN Personas P
+    ON U.idPersona = P.idPersona
+
+INNER JOIN Roles R
+    ON U.idRol = R.idRol
+
+WHERE U.idUsuario = $idUsuario
+";
+
+$resultadoTrabajador = mysqli_query($conn, $sqlTrabajador);
+
+if(!$resultadoTrabajador)
+{
+    die("Error en consulta: " . mysqli_error($conn));
+}
+
+$trabajador = mysqli_fetch_assoc($resultadoTrabajador);
+
+if(!$trabajador)
+{
+    header("Location: Interface_Trabajadores.php");
+    exit();
+}
+
+// ==============================
+// OBTENER ROLES
+// ==============================
+
+$sqlRoles = "SELECT * FROM Roles";
+
+$resultadoRoles = mysqli_query($conn, $sqlRoles);
+
+// ==============================
+// ACTUALIZAR TRABAJADOR
+// ==============================
+
+if($_SERVER["REQUEST_METHOD"] == "POST")
+{
+    $nombre = mysqli_real_escape_string($conn, $_POST['nombre']);
+    $apellidoP = mysqli_real_escape_string($conn, $_POST['apellidoP']);
+    $apellidoM = mysqli_real_escape_string($conn, $_POST['apellidoM']);
+    $telefono = mysqli_real_escape_string($conn, $_POST['telefono']);
+    $correo = mysqli_real_escape_string($conn, $_POST['correo']);
+
+    $usuario = mysqli_real_escape_string($conn, $_POST['usuario']);
+    $contrasena = mysqli_real_escape_string($conn, $_POST['contrasena']);
+
+    $idRol = intval($_POST['idRol']);
+
+    // ==============================
+    // IMAGEN
+    // ==============================
+
+    $imagenNombre = $trabajador['Imagen'];
+
+    if(isset($_FILES['imagen']) && $_FILES['imagen']['error'] == 0)
+    {
+        $imagenNombre = time() . "_" . basename($_FILES['imagen']['name']);
+
+        $rutaTemporal = $_FILES['imagen']['tmp_name'];
+
+        $rutaDestino = "../images/person/" . $imagenNombre;
+
+        move_uploaded_file($rutaTemporal, $rutaDestino);
+    }
+
+    // ==============================
+    // PROCEDIMIENTO ALMACENADO
+    // ==============================
+
+    $sqlEditar = "
+    CALL sp_EditarTrabajador(
+        '$idUsuario',
+        '$nombre',
+        '$apellidoP',
+        '$apellidoM',
+        '$telefono',
+        '$correo',
+        '$imagenNombre',
+        '$idRol',
+        '$usuario',
+        '$contrasena'
+    )
+    ";
+
+    if(mysqli_query($conn, $sqlEditar))
+    {
+        header("Location: Interface_Trabajadores.php");
+        exit();
+    }
+    else
+    {
+        echo "Error al actualizar: " . mysqli_error($conn);
+    }
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Editar Trabajador</title>
@@ -21,13 +282,14 @@
 
     <div class="container">
 
+        <!-- SIDEBAR -->
         <aside class="sidebar collapsed" id="sidebar">
 
             <!-- LOGO -->
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -170,7 +432,7 @@
                 <div class="user-profile">
 
                     <!-- NOTIFICACIONES -->
-                    <div class="notification-wrapper">
+                    <div class="notification-wrapper" id="notificationWrapper">
 
                         <img 
                             src="../images/icons/Notificaciones.png"
@@ -178,9 +440,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            1
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -188,8 +456,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -200,7 +468,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -220,19 +488,30 @@
                     <div class="profile-edit">
 
                         <img 
-                            src="../images/icons/Usuario.png"
+                            src="<?php
+                            
+                                if(!empty($trabajador['Imagen']))
+                                {
+                                    echo "../images/person/" . $trabajador['Imagen'];
+                                }
+                                else
+                                {
+                                    echo "../images/icons/Usuario.png";
+                                }
+
+                            ?>"
                             alt="Trabajador"
                             class="edit-avatar"
                         >
 
-                        <button class="change-photo-btn">
-                            Cambiar Foto
-                        </button>
-
                     </div>
 
                     <!-- FORM -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                        enctype="multipart/form-data"
+                    >
 
                         <div class="form-grid">
 
@@ -240,12 +519,45 @@
                             <div class="input-group">
 
                                 <label>
-                                    Nombre Completo
+                                    Nombre
                                 </label>
 
                                 <input 
                                     type="text"
-                                    value="Dr. Sam Wallfolk"
+                                    name="nombre"
+                                    value="<?php echo htmlspecialchars($trabajador['Nombre']); ?>"
+                                    required
+                                >
+
+                            </div>
+
+                            <!-- APELLIDO PATERNO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Apellido Paterno
+                                </label>
+
+                                <input 
+                                    type="text"
+                                    name="apellidoP"
+                                    value="<?php echo htmlspecialchars($trabajador['ApellidoP']); ?>"
+                                    required
+                                >
+
+                            </div>
+
+                            <!-- APELLIDO MATERNO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Apellido Materno
+                                </label>
+
+                                <input 
+                                    type="text"
+                                    name="apellidoM"
+                                    value="<?php echo htmlspecialchars($trabajador['ApellidoM']); ?>"
                                 >
 
                             </div>
@@ -259,7 +571,9 @@
 
                                 <input 
                                     type="email"
-                                    value="samwallfolk@gmail.com"
+                                    name="correo"
+                                    value="<?php echo htmlspecialchars($trabajador['Correo']); ?>"
+                                    required
                                 >
 
                             </div>
@@ -273,7 +587,9 @@
 
                                 <input 
                                     type="text"
-                                    value="+52 418 123 4567"
+                                    name="telefono"
+                                    value="<?php echo htmlspecialchars($trabajador['Telefono']); ?>"
+                                    required
                                 >
 
                             </div>
@@ -285,54 +601,73 @@
                                     Rol
                                 </label>
 
-                                <select>
+                                <select name="idRol" required>
 
-                                    <option selected>
-                                        Administrador
-                                    </option>
+                                    <?php while($rol = mysqli_fetch_assoc($resultadoRoles)) { ?>
 
-                                    <option>
-                                        Supervisor
-                                    </option>
+                                        <option 
+                                            value="<?php echo $rol['idRol']; ?>"
 
-                                    <option>
-                                        Cajero
-                                    </option>
+                                            <?php 
+                                            
+                                                if($rol['idRol'] == $trabajador['idRol'])
+                                                {
+                                                    echo "selected";
+                                                }
 
-                                    <option>
-                                        Mantenimiento
-                                    </option>
+                                            ?>
+                                        >
+
+                                            <?php echo $rol['NombreRol']; ?>
+
+                                        </option>
+
+                                    <?php } ?>
 
                                 </select>
 
                             </div>
 
-                            <!-- DIRECCION -->
-                            <div class="input-group full-width">
+                            <!-- USUARIO -->
+                            <div class="input-group">
 
                                 <label>
-                                    Dirección
+                                    Usuario
                                 </label>
 
                                 <input 
                                     type="text"
-                                    value="San Pedro de los Naranjos"
+                                    name="usuario"
+                                    value="<?php echo htmlspecialchars($trabajador['Usuario']); ?>"
+                                    required
                                 >
 
                             </div>
 
-                            <!-- DESCRIPCION -->
+                            <!-- CONTRASEÑA -->
+                            <div class="input-group">
+
+                                <label>Contraseña</label>
+
+                                <input 
+                                    type="password"
+                                    value="********"
+                                    readonly
+                                >
+
+                            </div>
+
+                            <!-- FOTO -->
                             <div class="input-group full-width">
 
                                 <label>
-                                    Descripción
+                                    Cambiar Foto
                                 </label>
 
-                                <textarea rows="5">
-
-Administrador general encargado del control del personal y supervisión de actividades internas.
-
-                                </textarea>
+                                <input 
+                                    type="file"
+                                    name="imagen"
+                                >
 
                             </div>
 
@@ -341,9 +676,12 @@ Administrador general encargado del control del personal y supervisión de activ
                         <!-- BUTTONS -->
                         <div class="form-buttons">
 
-                            <button type="button" class="btn-cancel">
+                            <a 
+                                href="Interface_Trabajadores.php"
+                                class="btn-cancel"
+                            >
                                 Cancelar
-                            </button>
+                            </a>
 
                             <button type="submit" class="btn-save">
                                 Guardar Cambios
@@ -384,53 +722,83 @@ Administrador general encargado del control del personal y supervisión de activ
 
                 <div class="notification-list">
 
-                    <div class="notification-item">
+                <?php
+
+                if($resultNoti->num_rows > 0)
+                {
+
+                    while($noti = $resultNoti->fetch_assoc())
+                    {
+
+                ?>
+
+                    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
                         <div class="notification-info">
 
                             <h4>
-                                Nuevo reporte registrado
+
+                                <?php echo htmlspecialchars($noti['Titulo']); ?>
+
                             </h4>
 
                             <p>
-                                Se registró un nuevo reporte pendiente.
+
+                                <?php echo htmlspecialchars($noti['Mensaje']); ?>
+
                             </p>
 
                             <span>
-                                Hace 5 minutos
+
+                                <?php
+
+                                if($noti['MinutosTranscurridos'] < 60)
+                                {
+                                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                                }
+                                else if($noti['MinutosTranscurridos'] < 1440)
+                                {
+                                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                                }
+                                else
+                                {
+                                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                                }
+
+                                ?>
+
                             </span>
 
                         </div>
 
-                        <button class="btn-check">
+                        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+                        <button 
+                            class="btn-check"
+                            data-id="<?php echo $noti['idNotificacion']; ?>"
+                        >
                             ✓
                         </button>
 
-                    </div>
-
-                    <div class="notification-item">
-
-                        <div class="notification-info">
-
-                            <h4>
-                                Pago pendiente
-                            </h4>
-
-                            <p>
-                                Existe un arrendamiento con retraso de pago.
-                            </p>
-
-                            <span>
-                                Hace 20 minutos
-                            </span>
-
-                        </div>
-
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                        <?php } ?>
 
                     </div>
+
+                <?php
+
+                    }
+
+                }
+                else
+                {
+
+                ?>
+
+                <p>
+                    No hay notificaciones.
+                </p>
+
+                <?php } ?>
 
                 </div>
 
@@ -443,13 +811,17 @@ Administrador general encargado del control del personal y supervisión de activ
     <!-- SCRIPT -->
     <script>
 
+        // ==============================
+        // ELEMENTOS
+        // ==============================
+
         const sidebar = document.getElementById('sidebar');
 
         const brandToggle = document.getElementById('brandToggle');
 
         const overlay = document.getElementById('overlay');
 
-        const notificationWrapper = document.querySelector('.notification-wrapper');
+        const notificationWrapper = document.getElementById('notificationWrapper');
 
         const notificationsModal = document.getElementById('notificationsModal');
 
@@ -457,59 +829,113 @@ Administrador general encargado del control del personal y supervisión de activ
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
+        // ==============================
+        // SIDEBAR
+        // ==============================
 
+        function toggleSidebar()
+        {
             sidebar.classList.toggle('collapsed');
 
             overlay.classList.toggle('active');
-
         }
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
+        // ==============================
+        // ABRIR MODAL
+        // ==============================
 
+        notificationWrapper.addEventListener('click', () =>
+        {
+            notificationsModal.classList.add('active');
+
+            overlay.classList.add('active');
+        });
+
+        // ==============================
+        // CERRAR MODAL
+        // ==============================
+
+        closeModal.addEventListener('click', () =>
+        {
+            notificationsModal.classList.remove('active');
+
+            overlay.classList.remove('active');
+        });
+
+        // ==============================
+        // CERRAR OVERLAY
+        // ==============================
+
+        overlay.addEventListener('click', () =>
+        {
             overlay.classList.remove('active');
 
             sidebar.classList.remove('collapsed');
 
             notificationsModal.classList.remove('active');
-
         });
 
-        /* ==============================
-        MODAL NOTIFICACIONES
-        ============================== */
+        // ==============================
+        // MARCAR NOTIFICACIÓN
+        // ==============================
 
-        notificationWrapper.addEventListener('click', () => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            notificationsModal.classList.add('active');
+            button.addEventListener('click', () =>
+            {
 
-            overlay.classList.add('active');
+                const id = button.dataset.id;
 
-        });
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-        closeModal.addEventListener('click', () => {
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
 
-            notificationsModal.classList.remove('active');
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
 
-            overlay.classList.remove('active');
+                    if(data === "OK")
+                    {
 
-        });
+                        const notification = button.parentElement;
 
-        /* ==============================
-        MARCAR COMO VISTA
-        ============================== */
+                        notification.classList.add('completed');
 
-        checkButtons.forEach(button => {
+                        button.remove();
 
-            button.addEventListener('click', () => {
+                        const badge = document.querySelector('.notification-badge');
 
-                const notification = button.parentElement;
+                        if(badge)
+                        {
 
-                notification.classList.add('completed');
+                            let total = parseInt(badge.innerText);
 
-                button.innerHTML = '✓';
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 
@@ -520,3 +946,7 @@ Administrador general encargado del control del personal y supervisión de activ
 </body>
 
 </html>
+
+<?php
+ob_end_flush();
+?>

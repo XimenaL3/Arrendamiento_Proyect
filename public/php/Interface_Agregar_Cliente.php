@@ -1,3 +1,185 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+    // Conexión
+    require_once "../../includes/Conexion.php";
+
+
+    // VALIDAR CONEXIÓN
+    if (!$conn) {
+
+        die("Error de conexión a la base de datos");
+
+    }
+
+// DATOS DEL USUARIO LOGUEADO
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+    $stmt->execute();
+    $stmt->bind_result($nombre, $apellidoP, $apellidoM, $imagen, $rol);
+    $stmt->fetch();
+    $stmt->close();
+
+    $nombre = trim($nombre);
+    $apellidoP = trim($apellidoP);
+    $apellidoM = trim($apellidoM);
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+// ==============================
+// REGISTRAR CLIENTE
+// ==============================
+
+if($_SERVER["REQUEST_METHOD"] == "POST")
+{
+    // DATOS PERSONALES
+    $nombre = mysqli_real_escape_string($conn, $_POST['nombre']);
+    $apellidoP = mysqli_real_escape_string($conn, $_POST['apellidoP']);
+    $apellidoM = mysqli_real_escape_string($conn, $_POST['apellidoM']);
+
+    $telefono = mysqli_real_escape_string($conn, $_POST['telefono']);
+    $correo = mysqli_real_escape_string($conn, $_POST['correo']);
+
+    // HISTORIAL
+    $historialCrediticio = mysqli_real_escape_string(
+        $conn,
+        $_POST['historialCrediticio']
+    );
+
+    $registroDeudasPrevias = isset($_POST['registroDeudasPrevias']) ? 1 : 0;
+
+    // ==============================
+    // IMAGEN
+    // ==============================
+
+    $imagenNombre = "Usuario.png";
+
+    if(isset($_FILES['imagen']) && $_FILES['imagen']['error'] == 0)
+    {
+        $imagenNombre = time() . "_" . basename($_FILES['imagen']['name']);
+
+        $rutaTemporal = $_FILES['imagen']['tmp_name'];
+
+        $rutaDestino = "../images/person/" . $imagenNombre;
+
+        move_uploaded_file($rutaTemporal, $rutaDestino);
+    }
+
+    // ==============================
+    // PROCEDIMIENTO ALMACENADO
+    // ==============================
+
+    $sql = "
+    CALL sp_RegistrarCliente(
+        '$nombre',
+        '$apellidoP',
+        '$apellidoM',
+        '$telefono',
+        '$correo',
+        '$imagenNombre',
+        '$historialCrediticio',
+        '$registroDeudasPrevias'
+    )
+    ";
+
+    if(mysqli_query($conn, $sql))
+    {
+        header("Location: Interface_Clientes.php");
+        exit();
+    }
+    else
+    {
+        echo "Error al registrar cliente: " . mysqli_error($conn);
+    }
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
@@ -28,7 +210,7 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -36,6 +218,7 @@
                 <div class="brand-text">
 
                     <h2>Sunlight Gardens</h2>
+
                     <span>Panel Administrativo</span>
 
                 </div>
@@ -179,9 +362,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            2
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -189,8 +378,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -201,7 +390,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -226,14 +415,14 @@
                             class="edit-avatar"
                         >
 
-                        <button class="change-photo-btn">
-                            Subir Foto
-                        </button>
-
                     </div>
 
                     <!-- FORM -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                        enctype="multipart/form-data"
+                    >
 
                         <div class="form-grid">
 
@@ -241,12 +430,42 @@
                             <div class="input-group">
 
                                 <label>
-                                    Nombre Completo
+                                    Nombre
                                 </label>
 
                                 <input 
                                     type="text"
-                                    placeholder="Ejemplo: Carlos Mendoza"
+                                    name="nombre"
+                                    required
+                                >
+
+                            </div>
+
+                            <!-- APELLIDO PATERNO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Apellido Paterno
+                                </label>
+
+                                <input 
+                                    type="text"
+                                    name="apellidoP"
+                                    required
+                                >
+
+                            </div>
+
+                            <!-- APELLIDO MATERNO -->
+                            <div class="input-group">
+
+                                <label>
+                                    Apellido Materno
+                                </label>
+
+                                <input 
+                                    type="text"
+                                    name="apellidoM"
                                 >
 
                             </div>
@@ -260,7 +479,8 @@
 
                                 <input 
                                     type="text"
-                                    placeholder="+52 418 000 0000"
+                                    name="telefono"
+                                    required
                                 >
 
                             </div>
@@ -274,135 +494,79 @@
 
                                 <input 
                                     type="email"
-                                    placeholder="correo@ejemplo.com"
+                                    name="correo"
+                                    required
                                 >
 
                             </div>
 
-                            <!-- ESTADO -->
+                            <!-- HISTORIAL -->
                             <div class="input-group">
 
                                 <label>
-                                    Estado del Cliente
+                                    Historial Crediticio
                                 </label>
 
-                                <select>
-
-                                    <option selected disabled>
-                                        Selecciona un estado
-                                    </option>
-
-                                    <option>
-                                        Activo
-                                    </option>
-
-                                    <option>
-                                        Pendiente
-                                    </option>
-
-                                    <option>
-                                        Inactivo
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                            <!-- RFC -->
-                            <div class="input-group">
-
-                                <label>
-                                    RFC
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    placeholder="RFC del cliente"
+                                <select 
+                                    name="historialCrediticio"
+                                    required
                                 >
 
-                            </div>
-
-                            <!-- CURP -->
-                            <div class="input-group">
-
-                                <label>
-                                    CURP
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    placeholder="CURP del cliente"
-                                >
-
-                            </div>
-
-                            <!-- DIRECCION -->
-                            <div class="input-group full-width">
-
-                                <label>
-                                    Dirección
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    placeholder="Dirección completa"
-                                >
-
-                            </div>
-
-                            <!-- TIPO CLIENTE -->
-                            <div class="input-group">
-
-                                <label>
-                                    Tipo de Cliente
-                                </label>
-
-                                <select>
-
-                                    <option selected disabled>
+                                    <option value="">
                                         Selecciona una opción
                                     </option>
 
-                                    <option>
-                                        Arrendatario
+                                    <option value="Bueno">
+                                        Bueno
                                     </option>
 
-                                    <option>
-                                        Comercial
+                                    <option value="Malo">
+                                        Malo
                                     </option>
 
-                                    <option>
-                                        Residencial
+                                    <option value="Nuevo">
+                                        Nuevo
                                     </option>
 
                                 </select>
 
                             </div>
 
-                            <!-- FECHA -->
+                            <!-- DEUDAS -->
                             <div class="input-group">
 
                                 <label>
-                                    Fecha de Registro
+                                    Registro de Deudas Previas
                                 </label>
 
-                                <input 
-                                    type="date"
+                                <select 
+                                    name="registroDeudasPrevias"
+                                    required
                                 >
+
+                                    <option value="0">
+                                        No
+                                    </option>
+
+                                    <option value="1">
+                                        Sí
+                                    </option>
+
+                                </select>
 
                             </div>
 
-                            <!-- OBSERVACIONES -->
-                            <div class="input-group full-width">
+                            <!-- FOTO -->
+                            <div class="input-group">
 
                                 <label>
-                                    Observaciones
+                                    Imagen
                                 </label>
 
-                                <textarea 
-                                    rows="5"
-                                    placeholder="Agrega observaciones o información importante del cliente..."
-                                ></textarea>
+                                <input 
+                                    type="file"
+                                    name="imagen"
+                                >
 
                             </div>
 
@@ -455,54 +619,87 @@
                 <div class="notification-list">
 
                     <!-- NOTIFICACION -->
-                    <div class="notification-item">
+                    <div class="notification-list">
 
-                        <div class="notification-info">
+<?php
 
-                            <h4>
-                                Nuevo cliente registrado
-                            </h4>
+if($resultNoti->num_rows > 0)
+{
 
-                            <p>
-                                Se agregó un nuevo cliente al sistema.
-                            </p>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <span>
-                                Hace 8 minutos
-                            </span>
+?>
 
-                        </div>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+        <div class="notification-info">
 
-                    </div>
+            <h4>
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                        <div class="notification-info">
+            </h4>
 
-                            <h4>
-                                Pago pendiente
-                            </h4>
+            <p>
 
-                            <p>
-                                Existe un pago pendiente de arrendamiento.
-                            </p>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <span>
-                                Hace 20 minutos
-                            </span>
+            </p>
 
-                        </div>
+            <span>
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                <?php
 
-                    </div>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
+
+                ?>
+
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
                 </div>
 
@@ -529,59 +726,101 @@
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
-
+        function toggleSidebar()
+        {
             sidebar.classList.toggle('collapsed');
 
             overlay.classList.toggle('active');
-
         }
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
-
+        overlay.addEventListener('click', () =>
+        {
             overlay.classList.remove('active');
 
             sidebar.classList.remove('collapsed');
 
             notificationsModal.classList.remove('active');
-
         });
 
-        /* ==============================
-        MODAL NOTIFICACIONES
-        ============================== */
+        // ==============================
+        // MODAL NOTIFICACIONES
+        // ==============================
 
-        notificationWrapper.addEventListener('click', () => {
-
+        notificationWrapper.addEventListener('click', () =>
+        {
             notificationsModal.classList.add('active');
 
             overlay.classList.add('active');
-
         });
 
-        closeModal.addEventListener('click', () => {
-
+        closeModal.addEventListener('click', () =>
+        {
             notificationsModal.classList.remove('active');
 
             overlay.classList.remove('active');
-
         });
 
-        /* ==============================
-        MARCAR COMO VISTA
-        ============================== */
+        // ==============================
+        // MARCAR COMO VISTA
+        // ==============================
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 

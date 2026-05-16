@@ -1,150 +1,560 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+OBTENER ID PROPIEDAD
+========================================= */
+
+$idPropiedad = isset($_GET['id'])
+    ? intval($_GET['id'])
+    : 0;
+
+if($idPropiedad <= 0){
+
+    die("Propiedad inválida");
+
+}
+
+/* =========================================
+OBTENER PROPIEDAD SELECCIONADA
+========================================= */
+
+$sqlPropiedad = "
+SELECT 
+    *
+FROM vw_Propiedades
+WHERE idPropiedad = ?
+AND EstadoDisponibilidad = 'Disponible'
+";
+
+$stmtPropiedad = $conn->prepare($sqlPropiedad);
+
+$stmtPropiedad->bind_param("i", $idPropiedad);
+
+$stmtPropiedad->execute();
+
+$resultPropiedad = $stmtPropiedad->get_result();
+
+if($resultPropiedad->num_rows <= 0){
+
+    die("La propiedad no está disponible");
+
+}
+
+$propiedad = $resultPropiedad->fetch_assoc();
+
+/* =========================================
+OBTENER INQUILINOS
+========================================= */
+
+$sqlInquilinos = "
+SELECT 
+    i.idInquilino,
+    CONCAT(p.Nombre,' ',p.ApellidoP,' ',p.ApellidoM) AS NombreCompleto,
+    p.Telefono,
+    p.Correo
+FROM Inquilinos i
+JOIN Personas p ON p.idPersona = i.idPersona
+LEFT JOIN Usuarios u ON u.idPersona = p.idPersona
+WHERE u.idRol IS NULL
+ORDER BY NombreCompleto
+";
+
+
+$resultInquilinos = $conn->query($sqlInquilinos);
+
+/* =========================================
+OBTENER NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT 
+    *,
+    TIMESTAMPDIFF(
+        MINUTE,
+        FechaNotificacion,
+        NOW()
+    ) AS MinutosTranscurridos
+FROM Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+TOTAL NOTIFICACIONES
+========================================= */
+
+$sqlTotalNotificaciones = "
+SELECT COUNT(*) AS total
+FROM Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No leida'
+";
+
+$stmtTotal = $conn->prepare($sqlTotalNotificaciones);
+
+$stmtTotal->bind_param("i", $idUsuario);
+
+$stmtTotal->execute();
+
+$resultTotal = $stmtTotal->get_result();
+
+$filaTotal = $resultTotal->fetch_assoc();
+
+$totalNotificaciones = $filaTotal['total'];
+
+/* =========================================
+MENSAJE
+========================================= */
+
+$mensaje = "";
+$tipoMensaje = "";
+
+/* =========================================
+REGISTRAR RENTA
+========================================= */
+
+if($_SERVER["REQUEST_METHOD"] == "POST"){
+
+    $idInquilino = intval($_POST['idInquilino']);
+
+    $fechaInicio = $_POST['fechaInicio'];
+
+    $fechaFin = $_POST['fechaFin'];
+
+    $montoRenta = floatval($_POST['montoRenta']);
+
+    $montoDeposito = floatval($_POST['montoDeposito']);
+
+    $observaciones = trim($_POST['observaciones']);
+
+    $permitirAbonos = intval($_POST['permitirAbonos']);
+
+    $nombreArchivo = "";
+
+    $serviciosJSON = [];
+
+if(isset($_POST['servicios'])){
+
+    foreach($_POST['servicios'] as $idServicio => $datos){
+
+        if(isset($datos['activo'])){
+
+            $serviciosJSON[] = [
+
+                "idServicio" => intval($idServicio),
+
+                "ManejoPorPorcentaje" =>
+                    intval($datos['manejo']),
+
+                "PorcentajeAsignado" =>
+                    $datos['porcentaje'] !== ''
+                    ? floatval($datos['porcentaje'])
+                    : 0,
+
+                "CostoFijo" =>
+                    $datos['costo'] !== ''
+                    ? floatval($datos['costo'])
+                    : 0
+
+            ];
+
+        }
+
+    }
+
+}
+
+$serviciosJSON = json_encode($serviciosJSON);
+
+    /* =========================================
+    VALIDACIONES
+    ========================================= */
+
+    if(empty($fechaInicio) || empty($fechaFin)){
+
+        $mensaje = "Debes ingresar las fechas";
+
+        $tipoMensaje = "error";
+
+    }
+    else if($fechaFin <= $fechaInicio){
+
+        $mensaje = "La fecha final debe ser mayor a la fecha inicial";
+
+        $tipoMensaje = "error";
+
+    }
+    else{
+
+        /* =========================================
+        SUBIR ARCHIVO
+        ========================================= */
+
+        if(
+            isset($_FILES['evidencia']) &&
+            $_FILES['evidencia']['error'] == 0
+        ){
+
+            $carpeta = "../uploads/evidencias/";
+
+            if(!file_exists($carpeta)){
+
+                mkdir($carpeta, 0777, true);
+
+            }
+
+            $extension = strtolower(
+                pathinfo(
+                    $_FILES['evidencia']['name'],
+                    PATHINFO_EXTENSION
+                )
+            );
+
+            $extensionesPermitidas = [
+                'jpg',
+                'jpeg',
+                'png',
+                'pdf'
+            ];
+
+            if(in_array($extension, $extensionesPermitidas)){
+
+                $nombreArchivo = time() . "_" .
+                basename($_FILES['evidencia']['name']);
+
+                $rutaFinal = $carpeta . $nombreArchivo;
+
+                move_uploaded_file(
+                    $_FILES['evidencia']['tmp_name'],
+                    $rutaFinal
+                );
+
+            }else{
+
+                $mensaje = "Formato de archivo no permitido";
+
+                $tipoMensaje = "error";
+
+            }
+
+        }
+
+        /* =========================================
+        PROCEDIMIENTO ALMACENADO
+        ========================================= */
+
+        if($mensaje == ""){
+
+            $stmt = $conn->prepare("
+            CALL sp_RentarPropiedad(
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
+            ");
+
+            if($stmt){
+
+                $stmt->bind_param(
+                    "iissddsiss",
+                    $idInquilino,
+                    $idPropiedad,
+                    $fechaInicio,
+                    $fechaFin,
+                    $montoRenta,
+                    $montoDeposito,
+                    $observaciones,
+                    $permitirAbonos,
+                    $nombreArchivo,
+                    $serviciosJSON
+                );
+
+                if($stmt->execute()){
+
+                    $resultado = $stmt->get_result();
+
+                    if($resultado){
+
+                        $fila = $resultado->fetch_assoc();
+
+                        $mensaje = $fila['Resultado'];
+
+                        if(
+                            $mensaje ==
+                            'Renta procesada exitosamente'
+                        ){
+
+                            $tipoMensaje = "success";
+
+                        }else{
+
+                            $tipoMensaje = "error";
+
+                        }
+
+                    }else{
+
+                        $mensaje =
+                        "Renta registrada correctamente";
+
+                        $tipoMensaje = "success";
+
+                    }
+
+                }else{
+
+                    $mensaje =
+                    "Error al registrar: " . $stmt->error;
+
+                    $tipoMensaje = "error";
+
+                }
+
+                $stmt->close();
+
+                while(
+                    $conn->more_results() &&
+                    $conn->next_result()
+                ){
+
+                    $dummyResult = $conn->use_result();
+
+                    if(
+                        $dummyResult instanceof mysqli_result
+                    ){
+
+                        $dummyResult->free();
+
+                    }
+
+                }
+
+            }else{
+
+                $mensaje = "Error en la consulta";
+
+                $tipoMensaje = "error";
+
+            }
+
+        }
+
+    }
+
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Registrar Arrendamiento</title>
+    <meta 
+        name="viewport" 
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Registrar Arrendamiento
+    </title>
 
     <!-- CSS -->
-    <link rel="stylesheet" href="../css/style.css">
-    <link rel="stylesheet" href="../css/Estilo_Edicion.css">
+    <link 
+        rel="stylesheet" 
+        href="../css/style.css"
+    >
+
+    <link 
+        rel="stylesheet" 
+        href="../css/Estilo_Edicion.css"
+    >
 
     <style>
 
         .status-badge{
 
-            display: inline-block;
-            padding: 8px 14px;
-            border-radius: 12px;
-            background: #f3f4f6;
-            color: #111827;
-            font-size: 13px;
-            font-weight: 600;
+            display:inline-block;
+            padding:8px 14px;
+            border-radius:12px;
+            background:#f3f4f6;
+            color:#111827;
+            font-size:13px;
+            font-weight:600;
 
         }
 
         .section-subtitle{
 
-            margin-top: 30px;
-            margin-bottom: 20px;
-            font-size: 18px;
-            color: #1f2937;
-            font-weight: 700;
+            margin-top:30px;
+            margin-bottom:20px;
+            font-size:18px;
+            color:#1f2937;
+            font-weight:700;
 
         }
 
         .upload-box{
 
-            border: 2px dashed #d1d5db;
-            border-radius: 16px;
-            padding: 30px;
-            text-align: center;
-            background: #f9fafb;
-            transition: .3s;
+            border:2px dashed #d1d5db;
+            border-radius:16px;
+            padding:30px;
+            text-align:center;
+            background:#f9fafb;
 
         }
 
-        .upload-box:hover{
+        .upload-box input{
 
-            border-color: #111827;
-            background: #f3f4f6;
-
-        }
-
-        .upload-box p{
-
-            color: #6b7280;
-            margin-top: 12px;
-            font-size: 14px;
+            width:100%;
 
         }
 
         .info-card{
 
-            margin-top: 30px;
-            background: #ffffff;
-            border-radius: 20px;
-            border: 1px solid #e5e7eb;
-            padding: 22px;
-            box-shadow: 0 10px 25px rgba(0,0,0,.05);
-
-        }
-
-        .info-card h3{
-
-            margin-bottom: 18px;
-            color: #111827;
+            margin-top:30px;
+            background:#ffffff;
+            border-radius:20px;
+            border:1px solid #e5e7eb;
+            padding:22px;
+            box-shadow:0 10px 25px rgba(0,0,0,.05);
 
         }
 
         .info-grid{
 
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 18px;
+            display:grid;
+            grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+            gap:18px;
 
         }
 
         .info-item{
 
-            background: #f9fafb;
-            border-radius: 14px;
-            padding: 16px;
-            border: 1px solid #e5e7eb;
+            background:#f9fafb;
+            border-radius:14px;
+            padding:16px;
+            border:1px solid #e5e7eb;
 
         }
 
         .info-item span{
 
-            display: block;
-            font-size: 13px;
-            color: #6b7280;
-            margin-bottom: 8px;
+            display:block;
+            font-size:13px;
+            color:#6b7280;
+            margin-bottom:8px;
 
         }
 
-        .info-item strong{
+        .success-message{
 
-            font-size: 16px;
-            color: #111827;
-
-        }
-
-        .details-box{
-
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-top: 15px;
+            background:#dcfce7;
+            color:#166534;
+            padding:15px;
+            border-radius:12px;
+            margin-bottom:20px;
+            font-weight:600;
 
         }
 
-        .detail-card{
+        .error-message{
 
-            flex: 1;
-            min-width: 180px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 14px;
-            padding: 16px;
-
-        }
-
-        .detail-card h4{
-
-            margin-bottom: 10px;
-            color: #111827;
-            font-size: 15px;
-
-        }
-
-        .detail-card p{
-
-            color: #6b7280;
-            font-size: 14px;
+            background:#fee2e2;
+            color:#991b1b;
+            padding:15px;
+            border-radius:12px;
+            margin-bottom:20px;
+            font-weight:600;
 
         }
 
@@ -166,15 +576,20 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
 
                 <div class="brand-text">
 
-                    <h2>Sunlight Gardens</h2>
-                    <span>Panel Administrativo</span>
+                    <h2>
+                        Sunlight Gardens
+                    </h2>
+
+                    <span>
+                        Panel Administrativo
+                    </span>
 
                 </div>
 
@@ -183,19 +598,17 @@
             <!-- NAV -->
             <nav class="sidebar-nav">
 
-                <p class="section-title">
-                    General
-                </p>
-
-                <a href="Interface_Trabajadores.php" class="active">
+                <a href="Interface_Trabajadores.php">
 
                     <img 
-                        src="../images/icons/Trabajadores_Oscuro.png"
+                        src="../images/icons/Trabajadores_Claro.png"
                         alt="Trabajadores"
                         class="menu-icon"
                     >
 
-                    <span>Trabajadores</span>
+                    <span>
+                        Trabajadores
+                    </span>
 
                 </a>
 
@@ -207,7 +620,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Clientes</span>
+                    <span>
+                        Clientes
+                    </span>
 
                 </a>
 
@@ -219,19 +634,26 @@
                         class="menu-icon"
                     >
 
-                    <span>Visitas</span>
+                    <span>
+                        Visitas
+                    </span>
 
                 </a>
 
-                <a href="Interface_Productos_Limpieza.php">
+                <a 
+                    href="Interface_Arrendamientos.php" 
+                    class="active"
+                >
 
                     <img 
-                        src="../images/icons/Mantenimiento_Claro.png"
-                        alt="Almacen Limpieza"
+                        src="../images/icons/Arrendamiento_Oscuro.png"
+                        alt="Arrendamiento"
                         class="menu-icon"
                     >
 
-                    <span>Almacen Limpieza</span>
+                    <span>
+                        Arrendamientos
+                    </span>
 
                 </a>
 
@@ -243,23 +665,23 @@
                         class="menu-icon"
                     >
 
-                    <span>Abonos</span>
+                    <span>
+                        Abonos
+                    </span>
 
                 </a>
 
-                <p class="section-title">
-                    Herramientas
-                </p>
-
-                <a href="Interface_Arrendamientos.php">
+                <a href="Interface_Productos_Limpieza.php">
 
                     <img 
-                        src="../images/icons/Arrendamiento_Claro.png"
-                        alt="Arrendamiento"
+                        src="../images/icons/Mantenimiento_Claro.png"
+                        alt="Almacen Limpieza"
                         class="menu-icon"
                     >
 
-                    <span>Arrendamiento</span>
+                    <span>
+                        Almacén Limpieza
+                    </span>
 
                 </a>
 
@@ -271,7 +693,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Reportes</span>
+                    <span>
+                        Reportes
+                    </span>
 
                 </a>
 
@@ -288,7 +712,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Cerrar Sesión</span>
+                    <span>
+                        Cerrar Sesión
+                    </span>
 
                 </a>
 
@@ -309,7 +735,7 @@
                     </h1>
 
                     <p class="subtitle">
-                        Registra un nuevo contrato de renta para locales, casas o edificios.
+                        Registro completo del arrendamiento.
                     </p>
 
                 </div>
@@ -320,14 +746,20 @@
                     <div class="notification-wrapper">
 
                         <img 
-                            src="../img/icons/bell.png"
+                            src="../images/icons/Notificaciones.png"
                             alt="Notificaciones"
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            4
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -335,19 +767,19 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../img/admin.jpg"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
                         <div class="user-info">
 
                             <small>
-                                Administrador
+                                En uso por
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -358,6 +790,16 @@
 
             </header>
 
+            <?php if($mensaje != ""){ ?>
+
+                <div class="<?= $tipoMensaje == 'success' ? 'success-message' : 'error-message'; ?>">
+
+                    <?= htmlspecialchars($mensaje); ?>
+
+                </div>
+
+            <?php } ?>
+
             <!-- FORM -->
             <section class="edit-section">
 
@@ -366,20 +808,31 @@
                     <!-- FOTO -->
                     <div class="profile-edit">
 
+                        <?php
+
+                        $imagenPropiedad = !empty($propiedad['Imagen'])
+                            ? "../../" . $propiedad['Imagen']
+                            : "../images/icons/Usuario.png";
+
+                        ?>
+
                         <img 
-                            src="../img/local1.jpg"
-                            alt="Arrendamiento"
+                            src="<?= $imagenPropiedad; ?>"
+                            alt="Propiedad"
                             class="edit-avatar"
                         >
 
-                        <button class="change-photo-btn">
-                            Subir Contrato
+                        <button 
+                            type="button"
+                            class="change-photo-btn"
+                        >
+                            Contrato de Renta
                         </button>
 
-                        <div style="margin-top: 15px;">
+                        <div style="margin-top:15px;">
 
                             <span class="status-badge">
-                                Nuevo Contrato
+                                <?= $propiedad['EstadoDisponibilidad']; ?>
                             </span>
 
                         </div>
@@ -387,7 +840,11 @@
                     </div>
 
                     <!-- FORMULARIO -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                        enctype="multipart/form-data"
+                    >
 
                         <h3 class="section-subtitle">
                             Información del Cliente
@@ -395,68 +852,37 @@
 
                         <div class="form-grid">
 
-                            <!-- NOMBRE -->
                             <div class="input-group">
 
                                 <label>
-                                    Nombre del Inquilino
+                                    Inquilino
                                 </label>
 
-                                <input 
-                                    type="text"
-                                    placeholder="Ejemplo: Carlos Mendoza"
+                                <select 
+                                    name="idInquilino"
+                                    required
                                 >
 
-                            </div>
-
-                            <!-- TELEFONO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Número Telefónico
-                                </label>
-
-                                <input 
-                                    type="text"
-                                    placeholder="+52 418 000 0000"
-                                >
-
-                            </div>
-
-                            <!-- CORREO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Correo Electrónico
-                                </label>
-
-                                <input 
-                                    type="email"
-                                    placeholder="correo@ejemplo.com"
-                                >
-
-                            </div>
-
-                            <!-- HISTORIAL -->
-                            <div class="input-group">
-
-                                <label>
-                                    Historial del Cliente
-                                </label>
-
-                                <select>
-
-                                    <option>
-                                        Buen Historial
+                                    <option value="">
+                                        Selecciona un inquilino
                                     </option>
 
-                                    <option>
-                                        Cliente Nuevo
+                                    <?php
+                                    
+                                    while($inquilino = $resultInquilinos->fetch_assoc())
+                                    {
+
+                                    ?>
+
+                                    <option 
+                                        value="<?= $inquilino['idInquilino']; ?>"
+                                    >
+
+                                        <?= htmlspecialchars($inquilino['NombreCompleto']); ?>
+
                                     </option>
 
-                                    <option>
-                                        Historial Negativo
-                                    </option>
+                                    <?php } ?>
 
                                 </select>
 
@@ -470,65 +896,34 @@
 
                         <div class="form-grid">
 
-                            <!-- TIPO -->
                             <div class="input-group">
 
                                 <label>
-                                    Tipo de Propiedad
+                                    Propiedad
                                 </label>
 
-                                <select>
-
-                                    <option selected disabled>
-                                        Selecciona una opción
-                                    </option>
-
-                                    <option>
-                                        Local Comercial
-                                    </option>
-
-                                    <option>
-                                        Casa
-                                    </option>
-
-                                    <option>
-                                        Edificio
-                                    </option>
-
-                                </select>
+                                <input 
+                                    type="text"
+                                    value="<?= htmlspecialchars($propiedad['NumeroIdentificador']); ?>"
+                                    readonly
+                                >
 
                             </div>
 
-                            <!-- PROPIEDAD -->
                             <div class="input-group">
 
                                 <label>
-                                    Propiedad Disponible
+                                    Tipo
                                 </label>
 
-                                <select>
-
-                                    <option selected disabled>
-                                        Selecciona una propiedad
-                                    </option>
-
-                                    <option>
-                                        Local Comercial #12
-                                    </option>
-
-                                    <option>
-                                        Casa Residencial #4
-                                    </option>
-
-                                    <option>
-                                        Edificio Central
-                                    </option>
-
-                                </select>
+                                <input 
+                                    type="text"
+                                    value="<?= htmlspecialchars($propiedad['TipoPropiedad']); ?>"
+                                    readonly
+                                >
 
                             </div>
 
-                            <!-- DIRECCION -->
                             <div class="input-group full-width">
 
                                 <label>
@@ -537,54 +932,9 @@
 
                                 <input 
                                     type="text"
-                                    placeholder="Dirección completa del inmueble"
+                                    value="<?= htmlspecialchars($propiedad['Direccion']); ?>"
+                                    readonly
                                 >
-
-                            </div>
-
-                            <!-- ESTADO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Estado del Lugar
-                                </label>
-
-                                <select>
-
-                                    <option>
-                                        Excelente Condición
-                                    </option>
-
-                                    <option>
-                                        Disponible
-                                    </option>
-
-                                    <option>
-                                        Mantenimiento
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                            <!-- SERVICIOS -->
-                            <div class="input-group">
-
-                                <label>
-                                    Servicios Incluidos
-                                </label>
-
-                                <select>
-
-                                    <option>
-                                        Servicios Básicos
-                                    </option>
-
-                                    <option>
-                                        Luz por porcentajes
-                                    </option>
-
-                                </select>
 
                             </div>
 
@@ -596,7 +946,6 @@
 
                         <div class="form-grid">
 
-                            <!-- RENTA -->
                             <div class="input-group">
 
                                 <label>
@@ -605,12 +954,14 @@
 
                                 <input 
                                     type="number"
-                                    placeholder="$0.00"
+                                    step="0.01"
+                                    min="0"
+                                    name="montoRenta"
+                                    required
                                 >
 
                             </div>
 
-                            <!-- DEPOSITO -->
                             <div class="input-group">
 
                                 <label>
@@ -619,84 +970,58 @@
 
                                 <input 
                                     type="number"
-                                    placeholder="$0.00"
+                                    step="0.01"
+                                    min="0"
+                                    name="montoDeposito"
+                                    required
                                 >
 
                             </div>
 
-                            <!-- FECHA -->
                             <div class="input-group">
 
                                 <label>
-                                    Fecha de Inicio
+                                    Fecha Inicio
                                 </label>
 
                                 <input 
                                     type="date"
+                                    name="fechaInicio"
+                                    required
                                 >
 
                             </div>
 
-                            <!-- DURACION -->
                             <div class="input-group">
 
                                 <label>
-                                    Duración del Contrato
+                                    Fecha Final
                                 </label>
 
-                                <select>
-
-                                    <option>
-                                        6 Meses
-                                    </option>
-
-                                    <option>
-                                        1 Año
-                                    </option>
-
-                                    <option>
-                                        2 Años
-                                    </option>
-
-                                </select>
+                                <input 
+                                    type="date"
+                                    name="fechaFin"
+                                    required
+                                >
 
                             </div>
 
-                            <!-- ABONOS -->
                             <div class="input-group">
 
                                 <label>
                                     Permitir Abonos
                                 </label>
 
-                                <select>
+                                <select 
+                                    name="permitirAbonos"
+                                    required
+                                >
 
-                                    <option>
+                                    <option value="1">
                                         Sí
                                     </option>
 
-                                    <option>
-                                        No
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                            <!-- AUTORIZACION -->
-                            <div class="input-group">
-
-                                <label>
-                                    Requiere Autorización
-                                </label>
-
-                                <select>
-
-                                    <option>
-                                        Sí
-                                    </option>
-
-                                    <option>
+                                    <option value="0">
                                         No
                                     </option>
 
@@ -719,8 +1044,8 @@
                                 </label>
 
                                 <textarea 
+                                    name="observaciones"
                                     rows="5"
-                                    placeholder="Escribe acuerdos, observaciones o detalles importantes del arrendamiento..."
                                 ></textarea>
 
                             </div>
@@ -728,24 +1053,112 @@
                             <div class="input-group full-width">
 
                                 <label>
-                                    Subir Contrato o Evidencias
+                                    Subir Contrato
                                 </label>
 
                                 <div class="upload-box">
 
-                                    <img 
-                                        src="../img/icons/upload.png"
-                                        alt="Upload"
-                                        width="50"
+                                    <input 
+                                        type="file"
+                                        name="evidencia"
+                                        accept=".jpg,.jpeg,.png,.pdf"
                                     >
-
-                                    <p>
-                                        Arrastra imágenes o documentos aquí
-                                    </p>
 
                                 </div>
 
                             </div>
+
+                        </div>
+
+                        <h3 class="section-subtitle">
+                            Servicios de la Propiedad
+                        </h3>
+
+                        <div class="form-grid">
+
+                            <?php
+
+                            $sqlServicios = "
+                            SELECT *
+                            FROM Servicios
+                            ORDER BY NombreServicio ASC
+                            ";
+
+                            $resultServicios = $conn->query($sqlServicios);
+
+                            while($servicio = $resultServicios->fetch_assoc()){
+
+                            ?>
+
+                            <div class="info-card">
+
+                                <h4>
+                                    <?= htmlspecialchars($servicio['NombreServicio']); ?>
+                                </h4>
+
+                                <input 
+                                    type="checkbox"
+                                    name="servicios[<?= $servicio['idServicio']; ?>][activo]"
+                                    value="1"
+                                >
+                                Activar Servicio
+
+                                <div class="input-group">
+
+                                    <label>
+                                        Manejo por porcentaje
+                                    </label>
+
+                                    <select
+                                        name="servicios[<?= $servicio['idServicio']; ?>][manejo]"
+                                    >
+
+                                        <option value="1">
+                                            Sí
+                                        </option>
+
+                                        <option value="0">
+                                            No
+                                        </option>
+
+                                    </select>
+
+                                </div>
+
+                                <div class="input-group">
+
+                                    <label>
+                                        Porcentaje Asignado
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max="100"
+                                        name="servicios[<?= $servicio['idServicio']; ?>][porcentaje]"
+                                    >
+
+                                </div>
+
+                                <div class="input-group">
+
+                                    <label>
+                                        Costo Fijo
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        name="servicios[<?= $servicio['idServicio']; ?>][costo]"
+                                    >
+
+                                </div>
+
+                            </div>
+
+                            <?php } ?>
 
                         </div>
 
@@ -761,11 +1174,11 @@
                                 <div class="info-item">
 
                                     <span>
-                                        Tipo de Contrato
+                                        Tipo
                                     </span>
 
                                     <strong>
-                                        Arrendamiento Comercial
+                                        <?= $propiedad['TipoPropiedad']; ?>
                                     </strong>
 
                                 </div>
@@ -773,11 +1186,11 @@
                                 <div class="info-item">
 
                                     <span>
-                                        Depósito Requerido
+                                        Estado
                                     </span>
 
                                     <strong>
-                                        $15,000 MXN
+                                        <?= $propiedad['EstadoDisponibilidad']; ?>
                                     </strong>
 
                                 </div>
@@ -785,65 +1198,12 @@
                                 <div class="info-item">
 
                                     <span>
-                                        Estado del Cliente
+                                        Estado Físico
                                     </span>
 
                                     <strong>
-                                        Buen Historial
+                                        <?= $propiedad['EstadoFisico']; ?>
                                     </strong>
-
-                                </div>
-
-                                <div class="info-item">
-
-                                    <span>
-                                        Estatus
-                                    </span>
-
-                                    <strong>
-                                        Pendiente de Firma
-                                    </strong>
-
-                                </div>
-
-                            </div>
-
-                            <!-- DETALLES -->
-                            <div class="details-box">
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Método de Cobro
-                                    </h4>
-
-                                    <p>
-                                        Pago mensual en tienda autorizada.
-                                    </p>
-
-                                </div>
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Servicios
-                                    </h4>
-
-                                    <p>
-                                        Servicios básicos incluidos en la renta.
-                                    </p>
-
-                                </div>
-
-                                <div class="detail-card">
-
-                                    <h4>
-                                        Condición del Lugar
-                                    </h4>
-
-                                    <p>
-                                        Inmueble disponible y en excelentes condiciones.
-                                    </p>
 
                                 </div>
 
@@ -854,11 +1214,17 @@
                         <!-- BOTONES -->
                         <div class="form-buttons">
 
-                            <button type="reset" class="btn-cancel">
+                            <button 
+                                type="reset"
+                                class="btn-cancel"
+                            >
                                 Limpiar
                             </button>
 
-                            <button type="submit" class="btn-save">
+                            <button 
+                                type="submit"
+                                class="btn-save"
+                            >
                                 Registrar Arrendamiento
                             </button>
 
@@ -897,53 +1263,83 @@
 
                 <div class="notification-list">
 
-                    <div class="notification-item">
+                <?php
+
+                if($resultNoti->num_rows > 0)
+                {
+
+                    while($noti = $resultNoti->fetch_assoc())
+                    {
+
+                ?>
+
+                    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
                         <div class="notification-info">
 
                             <h4>
-                                Nuevo reporte registrado
+
+                                <?php echo htmlspecialchars($noti['Titulo']); ?>
+
                             </h4>
 
                             <p>
-                                Se registró un nuevo reporte pendiente.
+
+                                <?php echo htmlspecialchars($noti['Mensaje']); ?>
+
                             </p>
 
                             <span>
-                                Hace 5 minutos
+
+                                <?php
+
+                                if($noti['MinutosTranscurridos'] < 60)
+                                {
+                                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                                }
+                                else if($noti['MinutosTranscurridos'] < 1440)
+                                {
+                                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                                }
+                                else
+                                {
+                                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                                }
+
+                                ?>
+
                             </span>
 
                         </div>
 
-                        <button class="btn-check">
+                        <?php if($noti['Estado'] == 'No leida') { ?>
+
+                        <button 
+                            class="btn-check"
+                            data-id="<?php echo $noti['idNotificacion']; ?>"
+                        >
                             ✓
                         </button>
 
-                    </div>
-
-                    <div class="notification-item">
-
-                        <div class="notification-info">
-
-                            <h4>
-                                Pago pendiente
-                            </h4>
-
-                            <p>
-                                Existe un arrendamiento con retraso de pago.
-                            </p>
-
-                            <span>
-                                Hace 20 minutos
-                            </span>
-
-                        </div>
-
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                        <?php } ?>
 
                     </div>
+
+                <?php
+
+                    }
+
+                }
+                else
+                {
+
+                ?>
+
+                <p>
+                    No hay notificaciones.
+                </p>
+
+                <?php } ?>
 
                 </div>
 
@@ -968,61 +1364,105 @@
 
         const closeModal = document.getElementById('closeModal');
 
-        const checkButtons = document.querySelectorAll('.btn-check');
+        /* ==============================
+        SIDEBAR
+        ============================== */
 
-        function toggleSidebar() {
-
+        function toggleSidebar()
+        {
             sidebar.classList.toggle('collapsed');
 
             overlay.classList.toggle('active');
-
         }
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
-
+        overlay.addEventListener('click', () =>
+        {
             overlay.classList.remove('active');
 
             sidebar.classList.remove('collapsed');
 
             notificationsModal.classList.remove('active');
-
         });
 
         /* ==============================
         MODAL NOTIFICACIONES
         ============================== */
 
-        notificationWrapper.addEventListener('click', () => {
-
+        notificationWrapper.addEventListener('click', () =>
+        {
             notificationsModal.classList.add('active');
 
             overlay.classList.add('active');
-
         });
 
-        closeModal.addEventListener('click', () => {
-
+        closeModal.addEventListener('click', () =>
+        {
             notificationsModal.classList.remove('active');
 
             overlay.classList.remove('active');
-
         });
 
         /* ==============================
-        MARCAR COMO VISTA
+        MARCAR NOTIFICACION
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 

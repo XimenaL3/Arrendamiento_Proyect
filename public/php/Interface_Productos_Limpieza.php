@@ -1,15 +1,200 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+/* =========================================
+OBTENER PRODUCTOS
+========================================= */
+
+$sql = "SELECT * FROM vw_Productos";
+
+$resultado = $conn->query($sql);
+
+/* =========================================
+CONTADORES
+========================================= */
+
+$totalProductos = 0;
+$disponibles = 0;
+$stockBajo = 0;
+$sinStock = 0;
+
+if($resultado->num_rows > 0)
+{
+    while($row = $resultado->fetch_assoc())
+    {
+        $totalProductos++;
+
+        if($row['EstadoStock'] == 'Disponible')
+        {
+            $disponibles++;
+        }
+
+        if($row['EstadoStock'] == 'Stock bajo')
+        {
+            $stockBajo++;
+        }
+
+        if($row['EstadoStock'] == 'Sin stock')
+        {
+            $sinStock++;
+        }
+    }
+}
+
+/* =========================================
+VOLVER A EJECUTAR CONSULTA
+========================================= */
+
+$resultado = $conn->query($sql);
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Productos de Limpieza</title>
+    <meta 
+        name="viewport" 
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Productos de Limpieza
+    </title>
 
     <!-- CSS -->
-    <link rel="stylesheet" href="../css/style.css">
+    <link 
+        rel="stylesheet" 
+        href="../css/style.css"
+    >
 
 </head>
 
@@ -27,7 +212,7 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -178,9 +363,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            3
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -188,8 +379,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -200,7 +391,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -219,49 +410,25 @@
                     <div class="filter-group">
 
                         <label>
-                            Categoría
-                        </label>
-
-                        <select>
-
-                            <option>
-                                Todos los productos
-                            </option>
-
-                            <option>
-                                Desinfectantes
-                            </option>
-
-                            <option>
-                                Jabones
-                            </option>
-
-                            <option>
-                                Aromatizantes
-                            </option>
-
-                            <option>
-                                Multiusos
-                            </option>
-
-                        </select>
-
-                    </div>
-
-                    <div class="filter-group">
-
-                        <label>
                             Estado
                         </label>
 
-                        <select>
+                        <select id="estadoFiltro">
 
-                            <option>
-                                Disponibles
+                            <option value="">
+                                Todos
                             </option>
 
-                            <option>
-                                Agotados
+                            <option value="Disponible">
+                                Disponible
+                            </option>
+
+                            <option value="Stock bajo">
+                                Stock bajo
+                            </option>
+
+                            <option value="Sin stock">
+                                Sin stock
                             </option>
 
                         </select>
@@ -273,6 +440,7 @@
                         <input 
                             type="text"
                             placeholder="Buscar producto..."
+                            id="buscador"
                         >
 
                         <a 
@@ -294,6 +462,66 @@
 
             </section>
 
+            <!-- ESTADISTICAS -->
+            <section class="workers-section">
+
+                <div class="workers-grid">
+
+                    <!-- DISPONIBLES -->
+                    <div class="worker-card">
+
+                        <div class="worker-title">
+
+                            <h3>
+                                Disponibles
+                            </h3>
+
+                            <p>
+                                <?= $disponibles; ?> productos
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                    <!-- STOCK BAJO -->
+                    <div class="worker-card">
+
+                        <div class="worker-title">
+
+                            <h3>
+                                Stock Bajo
+                            </h3>
+
+                            <p>
+                                <?= $stockBajo; ?> productos
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                    <!-- SIN STOCK -->
+                    <div class="worker-card">
+
+                        <div class="worker-title">
+
+                            <h3>
+                                Sin Stock
+                            </h3>
+
+                            <p>
+                                <?= $sinStock; ?> productos
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </section>
+
             <!-- PRODUCTS -->
             <section class="workers-section">
 
@@ -304,108 +532,129 @@
                         Inventario de Productos
 
                         <span class="badge">
-                            18
+                            <?= $totalProductos; ?>
                         </span>
 
                     </h2>
 
                 </div>
 
-                <div class="workers-grid">
+                <div class="workers-grid" id="contenedorProductos">
 
-                    <!-- PRODUCTO 1 -->
-                    <div class="worker-card">
+                    <?php
+                    
+                    if($resultado->num_rows > 0)
+                    {
+                        while($producto = $resultado->fetch_assoc())
+                        {
 
-                        <div class="card-header">
+                            $imagen = !empty($producto['Imagen']) 
+                                ? "../../" . $producto['Imagen']
+                                : "../../images/products/default-product.png";
 
-                            <div class="worker-meta">
+                            ?>
 
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Cloro"
-                                >
+                            <!-- PRODUCTO -->
+                            <div 
+                                class="worker-card producto-card"
+                                data-estado="<?= $producto['EstadoStock']; ?>"
+                            >
 
-                                <div class="worker-title">
+                                <div class="card-header">
 
-                                    <h3>
-                                        Cloro Industrial
-                                    </h3>
+                                    <div class="worker-meta">
+
+                                        <img 
+                                            src="<?= $imagen; ?>"
+                                            alt="Producto"
+                                        >
+
+                                        <div class="worker-title">
+
+                                            <h3>
+                                                <?= $producto['NombreProducto']; ?>
+                                            </h3>
+
+                                            <p>
+                                                <?= $producto['EstadoStock']; ?>
+                                            </p>
+
+                                        </div>
+
+                                    </div>
+
+                                </div>
+
+                                <div class="card-body">
 
                                     <p>
-                                        Desinfectante
+
+                                        <img 
+                                            src="../images/icons/Cantidad.png"
+                                            alt="Stock"
+                                            class="info-icon"
+                                        >
+
+                                        Stock: <?= $producto['CantidadDisponible']; ?> unidades
+
                                     </p>
+
+                                    <p>
+
+                                        <img 
+                                            src="../images/icons/Informacion.png"
+                                            alt="Descripción"
+                                            class="info-icon"
+                                        >
+
+                                        <?= $producto['Descripcion']; ?>
+
+                                    </p>
+
+                                </div>
+
+                                <div class="card-footer">
+
+                                    <a 
+                                        href="Interface_Editar_Producto_Limpieza.php?id=<?= $producto['idProducto']; ?>"
+                                        class="btn-action edit"
+                                    >
+
+                                        <img 
+                                            src="../images/icons/Editar.png"
+                                            alt="Editar"
+                                            class="action-icon"
+                                        >
+
+                                    </a>
+
+                                    <button class="btn-action delete">
+
+                                        <img 
+                                            src="../images/icons/Eliminar.png"
+                                            alt="Eliminar"
+                                            class="action-icon"
+                                        >
+
+                                    </button>
 
                                 </div>
 
                             </div>
 
-                        </div>
-
-                        <div class="card-body">
-
+                            <?php
+                        }
+                    }
+                    else
+                    {
+                        echo "
                             <p>
-
-                                <img 
-                                    src="../images/icons/Cantidad.png"
-                                    alt="Stock"
-                                    class="info-icon"
-                                >
-
-                                Stock: 25 unidades
-
+                                No hay productos registrados.
                             </p>
+                        ";
+                    }
 
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Precio.png"
-                                    alt="Precio"
-                                    class="info-icon"
-                                >
-
-                                Precio: $180 MXN
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Informacion.png"
-                                    alt="Categoría"
-                                    class="info-icon"
-                                >
-
-                                Uso Industrial
-
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <a href="Interface_Editar_Producto_Limpieza.php" class="btn-action edit">
-
-                                <img 
-                                    src="../images/icons/Editar.png"
-                                    alt="Editar"
-                                    class="action-icon"
-                                >
-
-                            </a>
-
-                            <button class="btn-action delete">
-
-                                <img 
-                                    src="../images/icons/Eliminar.png"
-                                    alt="Eliminar"
-                                    class="action-icon"
-                                >
-
-                            </button>
-
-                        </div>
-
-                    </div>
+                    ?>
 
                 </div>
 
@@ -438,55 +687,85 @@
 
                 <div class="notification-list">
 
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nuevo reporte registrado
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró un nuevo reporte pendiente.
-                            </p>
+?>
 
-                            <span>
-                                Hace 5 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Pago pendiente
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Existe un arrendamiento con retraso de pago.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 20 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -511,63 +790,151 @@
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
+        const buscador = document.getElementById('buscador');
 
+        const estadoFiltro = document.getElementById('estadoFiltro');
+
+        const cards = document.querySelectorAll('.producto-card');
+
+        /* ==============================
+        SIDEBAR
+        ============================== */
+
+        function toggleSidebar()
+        {
             sidebar.classList.toggle('collapsed');
 
             overlay.classList.toggle('active');
-
         }
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
-
+        overlay.addEventListener('click', () =>
+        {
             overlay.classList.remove('active');
 
             sidebar.classList.remove('collapsed');
 
             notificationsModal.classList.remove('active');
-
         });
 
         /* ==============================
         MODAL NOTIFICACIONES
         ============================== */
 
-        notificationWrapper.addEventListener('click', () => {
-
+        notificationWrapper.addEventListener('click', () =>
+        {
             notificationsModal.classList.add('active');
 
             overlay.classList.add('active');
-
         });
 
-        closeModal.addEventListener('click', () => {
-
+        closeModal.addEventListener('click', () =>
+        {
             notificationsModal.classList.remove('active');
 
             overlay.classList.remove('active');
-
         });
 
         /* ==============================
         MARCAR COMO VISTA
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 
         });
+
+        /* ==============================
+        FILTROS
+        ============================== */
+
+        function filtrarProductos()
+        {
+            const texto = buscador.value.toLowerCase();
+
+            const estado = estadoFiltro.value;
+
+            cards.forEach(card =>
+            {
+                const contenido = card.innerText.toLowerCase();
+
+                const estadoCard = card.dataset.estado;
+
+                let visible = true;
+
+                if(!contenido.includes(texto))
+                {
+                    visible = false;
+                }
+
+                if(estado !== "" && estado !== estadoCard)
+                {
+                    visible = false;
+                }
+
+                card.style.display = visible ? "block" : "none";
+            });
+        }
+
+        buscador.addEventListener("keyup", filtrarProductos);
+
+        estadoFiltro.addEventListener("change", filtrarProductos);
 
     </script>
 

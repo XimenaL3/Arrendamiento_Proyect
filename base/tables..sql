@@ -1,8 +1,10 @@
-CREATE DATABASE SunlightGardensDB;
+CREATE DATABASE SunlightGardens;
 
-USE SunlightGardensDB;
+USE SunlightGardens;
 
+-- =========================================
 -- TABLA: PERSONAS
+-- =========================================
 
 CREATE TABLE Personas(
     idPersona INT AUTO_INCREMENT PRIMARY KEY,
@@ -14,14 +16,18 @@ CREATE TABLE Personas(
     Imagen VARCHAR(255)
 );
 
+-- =========================================
 -- TABLA: ROLES
+-- =========================================
 
 CREATE TABLE Roles(
     idRol INT AUTO_INCREMENT PRIMARY KEY,
     NombreRol VARCHAR(50) NOT NULL UNIQUE
 );
 
+-- =========================================
 -- TABLA: USUARIOS
+-- =========================================
 
 CREATE TABLE Usuarios(
     idUsuario INT AUTO_INCREMENT PRIMARY KEY,
@@ -41,47 +47,81 @@ CREATE TABLE Usuarios(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: PROPIEDADES
+-- =========================================
 
 CREATE TABLE Propiedades(
     idPropiedad INT AUTO_INCREMENT PRIMARY KEY,
 
-    TipoPropiedad ENUM('Local comercial','Casa','Edificio') NOT NULL,
-    NumeroIdentificador VARCHAR(50) NOT NULL UNIQUE,
-    Descripcion TEXT,
-    EstadoFisico ENUM('Buenas condiciones','Malas condiciones','En mantenimiento') NOT NULL,
-    EstadoDisponibilidad ENUM('Disponible','Rentado','Aspecto Legal') NOT NULL,
-    Imagen VARCHAR(255)
+    TipoPropiedad ENUM(
+        'Local comercial',
+        'Casa',
+        'Edificio'
+    ) NOT NULL,
 
+    NumeroIdentificador VARCHAR(50) NOT NULL UNIQUE,
+
+    Descripcion TEXT,
+
+    EstadoFisico ENUM(
+        'Buenas condiciones',
+        'Malas condiciones',
+        'En mantenimiento'
+    ) NOT NULL,
+
+    EstadoDisponibilidad ENUM(
+        'Disponible',
+        'Rentado',
+        'Aspecto Legal'
+    ) NOT NULL,
+
+    Imagen VARCHAR(255)
 );
 
+-- =========================================
 -- TABLA: INQUILINOS
+-- =========================================
 
 CREATE TABLE Inquilinos(
     idInquilino INT AUTO_INCREMENT PRIMARY KEY,
+
     idPersona INT NOT NULL,
-    HistorialCrediticio ENUM('Bueno','Malo','Nuevo') NOT NULL,
+
+    HistorialCrediticio ENUM(
+        'Bueno',
+        'Malo',
+        'Nuevo'
+    ) NOT NULL,
+
     RegistroDeudasPrevias BOOLEAN DEFAULT FALSE,
 
     FOREIGN KEY (idPersona)
         REFERENCES Personas(idPersona)
         ON DELETE CASCADE
         ON UPDATE CASCADE
-
 );
 
--- TABLA: CONTRATOS ARRENDAMIENTO
+-- =========================================
+-- TABLA: CONTRATOS
+-- =========================================
 
 CREATE TABLE ContratosArrendamiento(
     idContrato INT AUTO_INCREMENT PRIMARY KEY,
+
     idInquilino INT NOT NULL,
     idPropiedad INT NOT NULL,
+
     FechaInicio DATE NOT NULL,
     FechaFin DATE NOT NULL,
+
     MontoRenta DECIMAL(10,2) NOT NULL,
     MontoDeposito DECIMAL(10,2) NOT NULL,
+
     Observaciones TEXT,
+
     PermitirAbonos BOOLEAN DEFAULT FALSE,
+
     Evidencia VARCHAR(255),
 
     FOREIGN KEY (idInquilino)
@@ -95,21 +135,29 @@ CREATE TABLE ContratosArrendamiento(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: SERVICIOS
+-- =========================================
 
 CREATE TABLE Servicios(
     idServicio INT AUTO_INCREMENT PRIMARY KEY,
     NombreServicio VARCHAR(100) NOT NULL UNIQUE
 );
 
+-- =========================================
 -- TABLA: PROPIEDAD_SERVICIOS
+-- =========================================
 
 CREATE TABLE Propiedad_Servicios(
     idPropiedadServicio INT AUTO_INCREMENT PRIMARY KEY,
+
     idPropiedad INT NOT NULL,
     idServicio INT NOT NULL,
+
     ManejoPorPorcentaje BOOLEAN DEFAULT FALSE,
+
     PorcentajeAsignado DECIMAL(5,2),
+
     CostoFijo DECIMAL(10,2),
 
     FOREIGN KEY (idPropiedad)
@@ -123,11 +171,15 @@ CREATE TABLE Propiedad_Servicios(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: TIENDAS COBRO
+-- =========================================
 
 CREATE TABLE Tiendas_Cobro(
     idTienda INT AUTO_INCREMENT PRIMARY KEY,
+
     NombreTienda VARCHAR(150) NOT NULL,
+
     idPropiedad INT NOT NULL,
 
     FOREIGN KEY (idPropiedad)
@@ -136,17 +188,89 @@ CREATE TABLE Tiendas_Cobro(
         ON UPDATE CASCADE
 );
 
--- TABLA: AUTORIZACIONES ABONO
+-- =========================================
+-- TABLA: ADEUDOS
+-- =========================================
 
-CREATE TABLE Autorizaciones_Abono(
-    idAutorizacion INT AUTO_INCREMENT PRIMARY KEY,
-    idUsuario INT NOT NULL,
+CREATE TABLE Adeudos(
+    idAdeudo INT AUTO_INCREMENT PRIMARY KEY,
+
+    idContrato INT NOT NULL,
+
+    MontoTotal DECIMAL(10,2) NOT NULL,
+
+    MontoPendiente DECIMAL(10,2) NOT NULL,
+
+    FechaLimite DATE NOT NULL,
+
+    PermitirAbonos BOOLEAN DEFAULT FALSE,
+
+    Estado ENUM(
+        'Pendiente',
+        'Liquidado'
+    ) NOT NULL,
+
+    FOREIGN KEY (idContrato)
+        REFERENCES ContratosArrendamiento(idContrato)
+        ON DELETE CASCADE
+        ON UPDATE CASCADE
+);
+
+-- =========================================
+-- TABLA: SOLICITUDES ABONO
+-- =========================================
+
+CREATE TABLE Solicitudes_Abono(
+    idSolicitud INT AUTO_INCREMENT PRIMARY KEY,
+
+    -- COBRADOR
+    idUsuarioSolicita INT NOT NULL,
+
+    -- ADMINISTRADOR
+    idAdministrador INT NULL,
+
+    -- CONTRATO
+    idContrato INT NOT NULL,
+
+    -- INQUILINO
     idInquilino INT NOT NULL,
-    MontoMinimoAceptado DECIMAL(10,2) NOT NULL,
-    FechaExpiracionAutorizacion DATE NOT NULL,
 
-    FOREIGN KEY (idUsuario)
+    -- MONTO QUE QUIERE PAGAR
+    MontoSolicitado DECIMAL(10,2) NOT NULL,
+
+    -- MONTO APROBADO
+    MontoAutorizado DECIMAL(10,2) NULL,
+
+    -- FECHA LIMITE
+    FechaLimitePago DATE NULL,
+
+    Observaciones TEXT NULL,
+
+    EstadoSolicitud ENUM(
+        'Pendiente',
+        'Aprobada',
+        'Rechazada',
+        'Pagada',
+        'Expirada'
+    ) NOT NULL DEFAULT 'Pendiente',
+
+    FechaSolicitud DATETIME
+    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FechaRevision DATETIME NULL,
+
+    FOREIGN KEY (idUsuarioSolicita)
         REFERENCES Usuarios(idUsuario)
+        ON DELETE RESTRICT
+        ON UPDATE CASCADE,
+
+    FOREIGN KEY (idAdministrador)
+        REFERENCES Usuarios(idUsuario)
+        ON DELETE SET NULL
+        ON UPDATE CASCADE,
+
+    FOREIGN KEY (idContrato)
+        REFERENCES ContratosArrendamiento(idContrato)
         ON DELETE RESTRICT
         ON UPDATE CASCADE,
 
@@ -156,17 +280,30 @@ CREATE TABLE Autorizaciones_Abono(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: PAGOS
+-- =========================================
 
 CREATE TABLE Pagos(
     idPago INT AUTO_INCREMENT PRIMARY KEY,
+
     idContrato INT NOT NULL,
+
     idTienda INT NOT NULL,
+
     idUsuario INT NOT NULL,
-    idAutorizacion INT NULL,
-    FechaPago DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    idSolicitud INT NULL,
+
+    FechaPago DATETIME
+    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     MontoPagado DECIMAL(10,2) NOT NULL,
-    TipoPago ENUM('Completo','Abono') NOT NULL,
+
+    TipoPago ENUM(
+        'Completo',
+        'Abono'
+    ) NOT NULL,
 
     FOREIGN KEY (idContrato)
         REFERENCES ContratosArrendamiento(idContrato)
@@ -183,48 +320,78 @@ CREATE TABLE Pagos(
         ON DELETE RESTRICT
         ON UPDATE CASCADE,
 
-    FOREIGN KEY (idAutorizacion)
-        REFERENCES Autorizaciones_Abono(idAutorizacion)
+    FOREIGN KEY (idSolicitud)
+        REFERENCES Solicitudes_Abono(idSolicitud)
         ON DELETE SET NULL
         ON UPDATE CASCADE
 );
 
--- TABLA: ADEUDOS
+-- =========================================
+-- TABLA: HISTORIAL APROBACIONES
+-- =========================================
 
-CREATE TABLE Adeudos(
-    idAdeudo INT AUTO_INCREMENT PRIMARY KEY,
-    idContrato INT NOT NULL,
-    MontoTotal DECIMAL(10,2) NOT NULL,
-    MontoPendiente DECIMAL(10,2) NOT NULL,
-    FechaLimite DATE NOT NULL,
-    Estado ENUM('Pendiente','Liquidado') NOT NULL,
+CREATE TABLE Historial_Aprobaciones_Abono(
+    idHistorial INT AUTO_INCREMENT PRIMARY KEY,
 
-    FOREIGN KEY (idContrato)
-        REFERENCES ContratosArrendamiento(idContrato)
+    idSolicitud INT NOT NULL,
+
+    idAdministrador INT NOT NULL,
+
+    Accion ENUM(
+        'Aprobado',
+        'Rechazado',
+        'Cancelado'
+    ) NOT NULL,
+
+    Comentario TEXT NULL,
+
+    FechaMovimiento DATETIME
+    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (idSolicitud)
+        REFERENCES Solicitudes_Abono(idSolicitud)
         ON DELETE CASCADE
+        ON UPDATE CASCADE,
+
+    FOREIGN KEY (idAdministrador)
+        REFERENCES Usuarios(idUsuario)
+        ON DELETE RESTRICT
         ON UPDATE CASCADE
 );
 
 -- =========================================
--- TABLA: BODEGA INVENTARIO
+-- TABLA: INVENTARIO
+-- =========================================
 
 CREATE TABLE Bodega_Inventario(
     idProducto INT AUTO_INCREMENT PRIMARY KEY,
+
     NombreProducto VARCHAR(150) NOT NULL,
+
     CantidadDisponible INT NOT NULL DEFAULT 0,
+
     Descripcion TEXT,
+
     Imagen VARCHAR(255)
 );
 
--- TABLA: MANTENIMIENTO DETALLE
+-- =========================================
+-- TABLA: MANTENIMIENTO
+-- =========================================
 
 CREATE TABLE Mantenimiento_Detalle(
     idMantenimiento INT AUTO_INCREMENT PRIMARY KEY,
+
     idPropiedad INT NOT NULL,
+
     idUsuario INT NOT NULL,
+
     idProducto INT NOT NULL,
+
     TareaRealizada TEXT NOT NULL,
+
     FechaInicio DATETIME NOT NULL,
+
     FechaFin DATETIME,
 
     FOREIGN KEY (idPropiedad)
@@ -243,15 +410,24 @@ CREATE TABLE Mantenimiento_Detalle(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: EVIDENCIAS LEGALES
+-- =========================================
 
 CREATE TABLE Evidencias_Legales(
     idEvidencia INT AUTO_INCREMENT PRIMARY KEY,
+
     idPropiedad INT NOT NULL,
+
     idInquilino INT NULL,
+
     DescripcionDano TEXT NOT NULL,
+
     Fotografia VARCHAR(255),
-    FechaRegistro DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FechaRegistro DATETIME
+    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     EsCasoLegal BOOLEAN DEFAULT FALSE,
 
     FOREIGN KEY (idPropiedad)
@@ -265,15 +441,28 @@ CREATE TABLE Evidencias_Legales(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: VISITAS COBRANZA
+-- =========================================
 
 CREATE TABLE Visitas_Cobranza(
     idVisita INT AUTO_INCREMENT PRIMARY KEY,
+
     idUsuario INT NOT NULL,
+
     idInquilino INT NOT NULL,
-    FechaVisita DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FechaVisita DATETIME
+    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     Observaciones TEXT,
-    Estatus ENUM('Pendiente','En atencion','Atendida','Cancelada') NOT NULL DEFAULT 'Pendiente',
+
+    Estatus ENUM(
+        'Pendiente',
+        'En atencion',
+        'Atendida',
+        'Cancelada'
+    ) NOT NULL DEFAULT 'Pendiente',
 
     FOREIGN KEY (idUsuario)
         REFERENCES Usuarios(idUsuario)
@@ -286,22 +475,49 @@ CREATE TABLE Visitas_Cobranza(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: REPORTES
+-- =========================================
 
 CREATE TABLE Reportes(
     idReporte INT AUTO_INCREMENT PRIMARY KEY,
-    idUsuario INT NOT NULL,
-    idPropiedad INT NOT NULL,
-    Titulo VARCHAR(150) NOT NULL,
-    Descripcion TEXT NOT NULL,
-    TipoReporte ENUM('Mantenimiento','Cobranza','Legal','Inventario','General') NOT NULL,
-    Prioridad ENUM('Baja','Media','Alta') NOT NULL DEFAULT 'Media',
-    Estado ENUM('Pendiente','En proceso','Finalizado','Cancelado') NOT NULL DEFAULT 'Pendiente',
-    Evidencia VARCHAR(255),
-    FechaRegistro DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (idUsuario)
-        REFERENCES Usuarios(idUsuario)
+    idInquilino INT NOT NULL,
+
+    idPropiedad INT NOT NULL,
+
+    Titulo VARCHAR(150) NOT NULL,
+
+    Descripcion TEXT NOT NULL,
+
+    TipoReporte ENUM(
+        'Mantenimiento',
+        'Cobranza',
+        'Legal',
+        'Inventario',
+        'General'
+    ) NOT NULL,
+
+    Prioridad ENUM(
+        'Baja',
+        'Media',
+        'Alta'
+    ) NOT NULL DEFAULT 'Media',
+
+    Estado ENUM(
+        'Pendiente',
+        'En proceso',
+        'Finalizado',
+        'Cancelado'
+    ) NOT NULL DEFAULT 'Pendiente',
+
+    Evidencia VARCHAR(255),
+
+    FechaRegistro DATETIME
+    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (idInquilino)
+        REFERENCES Inquilinos(idInquilino)
         ON DELETE RESTRICT
         ON UPDATE CASCADE,
 
@@ -311,16 +527,35 @@ CREATE TABLE Reportes(
         ON UPDATE CASCADE
 );
 
+-- =========================================
 -- TABLA: NOTIFICACIONES
+-- =========================================
 
 CREATE TABLE Notificaciones(
     idNotificacion INT AUTO_INCREMENT PRIMARY KEY,
+
     idUsuario INT NOT NULL,
+
     Titulo VARCHAR(150) NOT NULL,
+
     Mensaje TEXT NOT NULL,
-    TipoNotificacion ENUM('Reporte','Pago','Cobranza','Mantenimiento','Sistema','Legal') NOT NULL,
-    Estado ENUM('No leida','Leida') NOT NULL DEFAULT 'No leida',
-    FechaNotificacion DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    TipoNotificacion ENUM(
+        'Reporte',
+        'Pago',
+        'Cobranza',
+        'Mantenimiento',
+        'Sistema',
+        'Legal'
+    ) NOT NULL,
+
+    Estado ENUM(
+        'No leida',
+        'Leida'
+    ) NOT NULL DEFAULT 'No leida',
+
+    FechaNotificacion DATETIME
+    NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (idUsuario)
         REFERENCES Usuarios(idUsuario)

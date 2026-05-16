@@ -1,5 +1,3 @@
-USE SunlightGardensDB;
-
 -- PROCEDIMIENTO: REGISTRAR TRABAJADOR
 
 DELIMITER $$
@@ -225,71 +223,6 @@ BEGIN
         HistorialCrediticio = pHistorialCrediticio,
         RegistroDeudasPrevias = pRegistroDeudasPrevias
     WHERE idInquilino = pIdInquilino;
-
-END $$
-
-DELIMITER ;
-
--- PROCEDIMIENTO: REGISTRAR VISITA DE COBRANZA
-
-DELIMITER $$
-
-CREATE PROCEDURE sp_RegistrarVisita(
-
-    IN pIdUsuario INT,
-    IN pIdInquilino INT,
-    IN pFechaVisita DATETIME,
-    IN pObservaciones TEXT
-
-)
-BEGIN
-
-    INSERT INTO Visitas_Cobranza(
-
-        idUsuario,
-        idInquilino,
-        FechaVisita,
-        Observaciones
-
-    )
-    VALUES(
-
-        pIdUsuario,
-        pIdInquilino,
-        pFechaVisita,
-        pObservaciones
-
-    );
-
-END $$
-
-DELIMITER ;
-
--- PROCEDIMIENTO: EDITAR VISITA DE COBRANZA
-
-DELIMITER $$
-
-CREATE PROCEDURE sp_EditarVisita(
-
-    IN pIdVisita INT,
-
-    IN pIdUsuario INT,
-    IN pIdInquilino INT,
-    IN pFechaVisita DATETIME,
-    IN pObservaciones TEXT
-
-)
-BEGIN
-
-    UPDATE Visitas_Cobranza
-    SET
-
-        idUsuario = pIdUsuario,
-        idInquilino = pIdInquilino,
-        FechaVisita = pFechaVisita,
-        Observaciones = pObservaciones
-
-    WHERE idVisita = pIdVisita;
 
 END $$
 
@@ -524,196 +457,6 @@ END $$
 
 DELIMITER ;
 
-USE SunlightGardensDB;
-
--- =========================================
--- PROCEDIMIENTO: REGISTRAR PAGO / COBRO
--- =========================================
-
-DELIMITER $$
-
-CREATE PROCEDURE sp_RegistrarCobro(
-
-    IN pIdContrato INT,
-    IN pIdTienda INT,
-    IN pIdUsuario INT,
-    IN pMontoPagado DECIMAL(10,2),
-    IN pTipoPago ENUM('Completo','Abono')
-
-)
-BEGIN
-
-    DECLARE vMontoPendiente DECIMAL(10,2);
-    DECLARE vIdAdeudo INT;
-
-    -- OBTENER ADEUDO PENDIENTE
-    SELECT idAdeudo, MontoPendiente
-    INTO vIdAdeudo, vMontoPendiente
-    FROM Adeudos
-    WHERE idContrato = pIdContrato
-    AND Estado = 'Pendiente'
-    LIMIT 1;
-
-    -- REGISTRAR PAGO
-    INSERT INTO Pagos(
-        idContrato,
-        idTienda,
-        idUsuario,
-        MontoPagado,
-        TipoPago
-    )
-    VALUES(
-        pIdContrato,
-        pIdTienda,
-        pIdUsuario,
-        pMontoPagado,
-        pTipoPago
-    );
-
-    -- ACTUALIZAR ADEUDO
-    UPDATE Adeudos
-    SET
-        MontoPendiente = MontoPendiente - pMontoPagado
-    WHERE idAdeudo = vIdAdeudo;
-
-    -- SI YA SE LIQUIDÓ
-    UPDATE Adeudos
-    SET Estado = 'Liquidado'
-    WHERE idAdeudo = vIdAdeudo
-    AND MontoPendiente <= 0;
-
-END $$
-
-DELIMITER ;
-
--- PROCEDIMIENTO: SOLICITAR ABONO
-
-DELIMITER $$
-
-CREATE PROCEDURE sp_SolicitarAbono(
-
-    IN pIdUsuario INT,
-    IN pIdInquilino INT,
-    IN pMontoMinimoAceptado DECIMAL(10,2),
-    IN pFechaExpiracion DATE
-
-)
-BEGIN
-
-    INSERT INTO Autorizaciones_Abono(
-        idUsuario,
-        idInquilino,
-        MontoMinimoAceptado,
-        FechaExpiracionAutorizacion
-    )
-    VALUES(
-        pIdUsuario,
-        pIdInquilino,
-        pMontoMinimoAceptado,
-        pFechaExpiracion
-    );
-
-END $$
-
-DELIMITER ;
-
--- PROCEDIMIENTO: REGISTRAR ABONO AUTORIZADO
-
-DELIMITER $$
-
-CREATE PROCEDURE sp_RegistrarAbono(
-
-    IN pIdContrato INT,
-    IN pIdTienda INT,
-    IN pIdUsuario INT,
-    IN pIdAutorizacion INT,
-    IN pMontoPagado DECIMAL(10,2)
-
-)
-BEGIN
-
-    DECLARE vMontoPendiente DECIMAL(10,2);
-    DECLARE vMontoMinimo DECIMAL(10,2);
-    DECLARE vIdAdeudo INT;
-
-    -- OBTENER MONTO MÍNIMO AUTORIZADO
-    SELECT MontoMinimoAceptado
-    INTO vMontoMinimo
-    FROM Autorizaciones_Abono
-    WHERE idAutorizacion = pIdAutorizacion;
-
-    -- VALIDAR MONTO
-    IF pMontoPagado >= vMontoMinimo THEN
-
-        -- OBTENER ADEUDO
-        SELECT idAdeudo, MontoPendiente
-        INTO vIdAdeudo, vMontoPendiente
-        FROM Adeudos
-        WHERE idContrato = pIdContrato
-        AND Estado = 'Pendiente'
-        LIMIT 1;
-
-        -- REGISTRAR PAGO
-        INSERT INTO Pagos(
-            idContrato,
-            idTienda,
-            idUsuario,
-            idAutorizacion,
-            MontoPagado,
-            TipoPago
-        )
-        VALUES(
-            pIdContrato,
-            pIdTienda,
-            pIdUsuario,
-            pIdAutorizacion,
-            pMontoPagado,
-            'Abono'
-        );
-
-        -- DESCONTAR ADEUDO
-        UPDATE Adeudos
-        SET
-            MontoPendiente = MontoPendiente - pMontoPagado
-        WHERE idAdeudo = vIdAdeudo;
-
-        -- LIQUIDAR SI YA TERMINÓ
-        UPDATE Adeudos
-        SET Estado = 'Liquidado'
-        WHERE idAdeudo = vIdAdeudo
-        AND MontoPendiente <= 0;
-
-    END IF;
-
-END $$
-
-DELIMITER ;
-
--- PROCEDIMIENTO: EDITAR AUTORIZACIÓN ABONO
-
-DELIMITER $$
-
-CREATE PROCEDURE sp_EditarAutorizacionAbono(
-
-    IN pIdAutorizacion INT,
-    IN pMontoMinimoAceptado DECIMAL(10,2),
-    IN pFechaExpiracion DATE
-
-)
-BEGIN
-
-    UPDATE Autorizaciones_Abono
-    SET
-        MontoMinimoAceptado = pMontoMinimoAceptado,
-        FechaExpiracionAutorizacion = pFechaExpiracion
-    WHERE idAutorizacion = pIdAutorizacion;
-
-END $$
-
-DELIMITER ;
-
-USE SunlightGardensDB;
-
 -- PROCEDIMIENTO: REGISTRAR PRODUCTO
 
 DELIMITER $$
@@ -778,7 +521,7 @@ DELIMITER $$
 
 CREATE PROCEDURE sp_RegistrarReporte(
 
-    IN pIdUsuario INT,
+    IN pIdInquilino INT,
     IN pIdPropiedad INT,
 
     IN pTitulo VARCHAR(150),
@@ -805,7 +548,7 @@ BEGIN
 
     INSERT INTO Reportes(
 
-        idUsuario,
+        idInquilino,
         idPropiedad,
 
         Titulo,
@@ -819,7 +562,7 @@ BEGIN
     )
     VALUES(
 
-        pIdUsuario,
+        pIdInquilino,
         pIdPropiedad,
 
         pTitulo,
@@ -888,5 +631,924 @@ BEGIN
     WHERE idReporte = pIdReporte;
 
 END $$
+
+DELIMITER ;
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_RentarPropiedad(
+
+    IN p_idInquilino INT,
+    IN p_idPropiedad INT,
+    IN p_FechaInicio DATE,
+    IN p_FechaFin DATE,
+    IN p_MontoRenta DECIMAL(10,2),
+    IN p_MontoDeposito DECIMAL(10,2),
+    IN p_Observaciones TEXT,
+    IN p_PermitirAbonos BOOLEAN,
+    IN p_Evidencia VARCHAR(255),
+
+    IN p_Servicios JSON
+
+)
+BEGIN
+
+    DECLARE v_estado VARCHAR(50);
+
+    DECLARE v_total INT DEFAULT 0;
+    DECLARE v_index INT DEFAULT 0;
+
+    DECLARE v_idContrato INT;
+
+    DECLARE v_idServicio INT;
+    DECLARE v_manejoPorPorcentaje BOOLEAN;
+    DECLARE v_porcentajeAsignado DECIMAL(10,2);
+    DECLARE v_costoFijo DECIMAL(10,2);
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SELECT 'Error al procesar la renta' AS Resultado;
+    END;
+
+    START TRANSACTION;
+
+    SELECT EstadoDisponibilidad
+    INTO v_estado
+    FROM Propiedades
+    WHERE idPropiedad = p_idPropiedad;
+
+    IF v_estado IS NULL THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La propiedad no existe.';
+
+    ELSEIF v_estado != 'Disponible' THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'La propiedad no está disponible.';
+
+    ELSE
+
+        INSERT INTO ContratosArrendamiento(
+            idInquilino,
+            idPropiedad,
+            FechaInicio,
+            FechaFin,
+            MontoRenta,
+            MontoDeposito,
+            Observaciones,
+            PermitirAbonos,
+            Evidencia,
+            EstadoContrato
+        )
+        VALUES(
+            p_idInquilino,
+            p_idPropiedad,
+            p_FechaInicio,
+            p_FechaFin,
+            p_MontoRenta,
+            p_MontoDeposito,
+            p_Observaciones,
+            p_PermitirAbonos,
+            p_Evidencia,
+            'Activo'
+        );
+
+        SET v_idContrato = LAST_INSERT_ID();
+
+        UPDATE Propiedades
+        SET EstadoDisponibilidad = 'Rentado'
+        WHERE idPropiedad = p_idPropiedad;
+
+        INSERT INTO Adeudos(
+            idContrato,
+            MontoTotal,
+            MontoPendiente,
+            FechaLimite,
+            Estado
+        )
+        VALUES(
+            v_idContrato,
+            p_MontoRenta,
+            p_MontoRenta,
+            p_FechaFin,
+            'Pendiente'
+        );
+
+        SET v_total = JSON_LENGTH(p_Servicios);
+
+        WHILE v_index < v_total DO
+
+            SET v_idServicio = CAST(
+                JSON_UNQUOTE(JSON_EXTRACT(
+                    p_Servicios,
+                    CONCAT('$[', v_index, '].idServicio')
+                )) AS UNSIGNED
+            );
+
+            SET v_manejoPorPorcentaje = CAST(
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(
+                    p_Servicios,
+                    CONCAT('$[', v_index, '].ManejoPorPorcentaje')
+                )), 0) AS UNSIGNED
+            );
+
+            SET v_porcentajeAsignado = CAST(
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(
+                    p_Servicios,
+                    CONCAT('$[', v_index, '].PorcentajeAsignado')
+                )), 0) AS DECIMAL(10,2)
+            );
+
+            SET v_costoFijo = CAST(
+                COALESCE(JSON_UNQUOTE(JSON_EXTRACT(
+                    p_Servicios,
+                    CONCAT('$[', v_index, '].CostoFijo')
+                )), 0) AS DECIMAL(10,2)
+            );
+
+            INSERT INTO Propiedad_Servicios(
+                idPropiedad,
+                idServicio,
+                ManejoPorPorcentaje,
+                PorcentajeAsignado,
+                CostoFijo
+            )
+            VALUES(
+                p_idPropiedad,
+                v_idServicio,
+                v_manejoPorPorcentaje,
+                v_porcentajeAsignado,
+                v_costoFijo
+            );
+
+            SET v_index = v_index + 1;
+
+        END WHILE;
+
+        COMMIT;
+
+        SELECT 'Renta procesada exitosamente' AS Resultado;
+
+    END IF;
+
+END $$
+
+DELIMITER ;
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_AgregarTiendaCobro(
+
+    IN pNombreTienda VARCHAR(150),
+    IN pIdPropiedad INT
+
+)
+BEGIN
+
+    INSERT INTO Tiendas_Cobro(
+
+        NombreTienda,
+        idPropiedad
+
+    )
+    VALUES(
+
+        pNombreTienda,
+        pIdPropiedad
+
+    );
+
+END $$
+
+DELIMITER ;
+
+-- =========================================
+-- PROCEDIMIENTO:
+-- REGISTRAR COBRO COMPLETO
+-- =========================================
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_RegistrarCobro(
+
+    IN pIdContrato INT,
+    IN pIdTienda INT,
+    IN pIdUsuario INT,
+    IN pMontoPagado DECIMAL(10,2)
+
+)
+BEGIN
+
+    -- =====================================
+    -- VARIABLES
+    -- =====================================
+
+    DECLARE vIdAdeudo INT;
+    DECLARE vMontoPendiente DECIMAL(10,2);
+    DECLARE vExisteContrato INT DEFAULT 0;
+    DECLARE vExisteTienda INT DEFAULT 0;
+    DECLARE vExisteUsuario INT DEFAULT 0;
+
+    -- =====================================
+    -- MANEJO DE ERRORES
+    -- =====================================
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+
+        ROLLBACK;
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Error al registrar el pago completo';
+
+    END;
+
+    START TRANSACTION;
+
+    -- =====================================
+    -- VALIDAR CONTRATO
+    -- =====================================
+
+    SELECT COUNT(*)
+    INTO vExisteContrato
+    FROM ContratosArrendamiento
+    WHERE idContrato = pIdContrato;
+
+    IF vExisteContrato = 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'El contrato no existe';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR TIENDA
+    -- =====================================
+
+    SELECT COUNT(*)
+    INTO vExisteTienda
+    FROM Tiendas_Cobro
+    WHERE idTienda = pIdTienda;
+
+    IF vExisteTienda = 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'La tienda no existe';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR USUARIO
+    -- =====================================
+
+    SELECT COUNT(*)
+    INTO vExisteUsuario
+    FROM Usuarios
+    WHERE idUsuario = pIdUsuario;
+
+    IF vExisteUsuario = 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'El usuario no existe';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR MONTO
+    -- =====================================
+
+    IF pMontoPagado IS NULL
+    OR pMontoPagado <= 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Monto inválido';
+
+    END IF;
+
+    -- =====================================
+    -- OBTENER ADEUDO
+    -- =====================================
+
+    SELECT
+        idAdeudo,
+        MontoPendiente
+    INTO
+        vIdAdeudo,
+        vMontoPendiente
+    FROM Adeudos
+    WHERE idContrato = pIdContrato
+    AND Estado = 'Pendiente'
+    LIMIT 1
+    FOR UPDATE;
+
+    -- =====================================
+    -- VALIDAR ADEUDO
+    -- =====================================
+
+    IF vIdAdeudo IS NULL THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'No existe adeudo pendiente';
+
+    END IF;
+
+    -- =====================================
+    -- EVITAR SOBREPAGO
+    -- =====================================
+
+    IF pMontoPagado > vMontoPendiente THEN
+
+        SET pMontoPagado = vMontoPendiente;
+
+    END IF;
+
+    -- =====================================
+    -- INSERTAR PAGO
+    -- =====================================
+
+    INSERT INTO Pagos(
+
+        idContrato,
+        idTienda,
+        idUsuario,
+        idSolicitud,
+        FechaPago,
+        MontoPagado,
+        TipoPago
+
+    )
+    VALUES(
+
+        pIdContrato,
+        pIdTienda,
+        pIdUsuario,
+        NULL,
+        NOW(),
+        pMontoPagado,
+        'Completo'
+
+    );
+
+    -- =====================================
+    -- ACTUALIZAR ADEUDO
+    -- =====================================
+
+    UPDATE Adeudos
+    SET
+
+        MontoPendiente =
+        MontoPendiente - pMontoPagado,
+
+        Estado = CASE
+
+            WHEN
+            (MontoPendiente - pMontoPagado) <= 0
+            THEN 'Liquidado'
+
+            ELSE 'Pendiente'
+
+        END
+
+    WHERE idAdeudo = vIdAdeudo;
+
+    -- =====================================
+    -- CREAR NOTIFICACION
+    -- =====================================
+
+    INSERT INTO Notificaciones(
+
+        idUsuario,
+        Titulo,
+        Mensaje,
+        TipoNotificacion,
+        Estado,
+        FechaNotificacion
+
+    )
+    VALUES(
+
+        pIdUsuario,
+
+        'Pago registrado',
+
+        CONCAT(
+            'Se registró un pago completo de $',
+            pMontoPagado,
+            ' para el contrato #',
+            pIdContrato
+        ),
+
+        'Pago',
+
+        'No leida',
+
+        NOW()
+
+    );
+
+    COMMIT;
+
+END$$
+
+DELIMITER ;
+
+-- =========================================
+-- PROCEDIMIENTO:
+-- SOLICITAR ABONO
+-- =========================================
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_SolicitarAbono(
+
+    IN pIdUsuarioSolicita INT,
+    IN pIdContrato INT,
+    IN pIdInquilino INT,
+    IN pMontoSolicitado DECIMAL(10,2),
+    IN pObservaciones TEXT
+
+)
+BEGIN
+
+    -- =====================================
+    -- VARIABLES
+    -- =====================================
+
+    DECLARE vPermitirAbonos BOOLEAN;
+    DECLARE vMontoPendiente DECIMAL(10,2);
+    DECLARE vExisteContrato INT DEFAULT 0;
+    DECLARE vExisteUsuario INT DEFAULT 0;
+    DECLARE vExisteInquilino INT DEFAULT 0;
+
+    -- =====================================
+    -- MANEJO DE ERRORES
+    -- =====================================
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+
+        ROLLBACK;
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Error al solicitar abono';
+
+    END;
+
+    START TRANSACTION;
+
+    -- =====================================
+    -- VALIDAR USUARIO
+    -- =====================================
+
+    SELECT COUNT(*)
+    INTO vExisteUsuario
+    FROM Usuarios
+    WHERE idUsuario = pIdUsuarioSolicita;
+
+    IF vExisteUsuario = 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Usuario inválido';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR CONTRATO
+    -- =====================================
+
+    SELECT COUNT(*)
+    INTO vExisteContrato
+    FROM ContratosArrendamiento
+    WHERE idContrato = pIdContrato;
+
+    IF vExisteContrato = 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Contrato inválido';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR INQUILINO
+    -- =====================================
+
+    SELECT COUNT(*)
+    INTO vExisteInquilino
+    FROM Inquilinos
+    WHERE idInquilino = pIdInquilino;
+
+    IF vExisteInquilino = 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Inquilino inválido';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR MONTO
+    -- =====================================
+
+    IF pMontoSolicitado IS NULL
+    OR pMontoSolicitado <= 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Monto inválido';
+
+    END IF;
+
+    -- =====================================
+    -- OBTENER ADEUDO
+    -- =====================================
+
+    SELECT
+        PermitirAbonos,
+        MontoPendiente
+    INTO
+        vPermitirAbonos,
+        vMontoPendiente
+    FROM Adeudos
+    WHERE idContrato = pIdContrato
+    AND Estado = 'Pendiente'
+    LIMIT 1
+    FOR UPDATE;
+
+    -- =====================================
+    -- VALIDAR ADEUDO
+    -- =====================================
+
+    IF vMontoPendiente IS NULL THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'No existe adeudo pendiente';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR ABONOS
+    -- =====================================
+
+    IF vPermitirAbonos = FALSE THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Este adeudo no permite abonos';
+
+    END IF;
+
+    -- =====================================
+    -- EVITAR SOBREPAGO
+    -- =====================================
+
+    IF pMontoSolicitado > vMontoPendiente THEN
+
+        SET pMontoSolicitado = vMontoPendiente;
+
+    END IF;
+
+    -- =====================================
+    -- INSERTAR SOLICITUD
+    -- =====================================
+
+    INSERT INTO Solicitudes_Abono(
+
+        idUsuarioSolicita,
+        idAdministrador,
+        idContrato,
+        idInquilino,
+        MontoSolicitado,
+        MontoAutorizado,
+        FechaLimitePago,
+        Observaciones,
+        EstadoSolicitud,
+        FechaSolicitud,
+        FechaRevision
+
+    )
+    VALUES(
+
+        pIdUsuarioSolicita,
+        NULL,
+        pIdContrato,
+        pIdInquilino,
+        pMontoSolicitado,
+        NULL,
+        NULL,
+        pObservaciones,
+        'Pendiente',
+        NOW(),
+        NULL
+
+    );
+
+    -- =====================================
+    -- NOTIFICACION
+    -- =====================================
+
+    INSERT INTO Notificaciones(
+
+        idUsuario,
+        Titulo,
+        Mensaje,
+        TipoNotificacion,
+        Estado,
+        FechaNotificacion
+
+    )
+    VALUES(
+
+        pIdUsuarioSolicita,
+
+        'Solicitud de abono',
+
+        CONCAT(
+            'Se solicitó un abono de $',
+            pMontoSolicitado,
+            ' para el contrato #',
+            pIdContrato
+        ),
+
+        'Cobranza',
+
+        'No leida',
+
+        NOW()
+
+    );
+
+    COMMIT;
+
+END$$
+
+DELIMITER ;
+
+-- =========================================
+-- PROCEDIMIENTO:
+-- REGISTRAR ABONO
+-- =========================================
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_RegistrarAbono(
+
+    IN pIdContrato INT,
+    IN pIdTienda INT,
+    IN pIdUsuario INT,
+    IN pIdSolicitud INT,
+    IN pMontoPagado DECIMAL(10,2)
+
+)
+BEGIN
+
+    -- =====================================
+    -- VARIABLES
+    -- =====================================
+
+    DECLARE vIdAdeudo INT;
+    DECLARE vMontoPendiente DECIMAL(10,2);
+    DECLARE vNuevoMonto DECIMAL(10,2);
+    DECLARE vEstadoSolicitud VARCHAR(20);
+
+    -- =====================================
+    -- MANEJO DE ERRORES
+    -- =====================================
+
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+
+        ROLLBACK;
+
+        RESIGNAL;
+
+    END;
+
+    START TRANSACTION;
+
+    -- =====================================
+    -- VALIDAR MONTO
+    -- =====================================
+
+    IF pMontoPagado IS NULL
+    OR pMontoPagado <= 0 THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Monto inválido';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR SOLICITUD
+    -- =====================================
+
+    SELECT EstadoSolicitud
+    INTO vEstadoSolicitud
+    FROM Solicitudes_Abono
+    WHERE idSolicitud = pIdSolicitud
+    LIMIT 1
+    FOR UPDATE;
+
+    IF vEstadoSolicitud IS NULL THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'Solicitud inexistente';
+
+    END IF;
+
+    -- =====================================
+    -- OBTENER ADEUDO
+    -- =====================================
+
+    SELECT
+        idAdeudo,
+        MontoPendiente
+    INTO
+        vIdAdeudo,
+        vMontoPendiente
+    FROM Adeudos
+    WHERE idContrato = pIdContrato
+    AND Estado = 'Pendiente'
+    LIMIT 1
+    FOR UPDATE;
+
+    IF vIdAdeudo IS NULL THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'No existe adeudo pendiente';
+
+    END IF;
+
+    -- =====================================
+    -- VALIDAR EXCESO
+    -- =====================================
+
+    IF pMontoPagado > vMontoPendiente THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT =
+        'El monto excede la deuda pendiente';
+
+    END IF;
+
+    -- =====================================
+    -- INSERTAR PAGO
+    -- =====================================
+
+    INSERT INTO Pagos(
+
+        idContrato,
+        idTienda,
+        idUsuario,
+        idSolicitud,
+        FechaPago,
+        MontoPagado,
+        TipoPago
+
+    )
+    VALUES(
+
+        pIdContrato,
+        pIdTienda,
+        pIdUsuario,
+        pIdSolicitud,
+        NOW(),
+        pMontoPagado,
+        'Abono'
+
+    );
+
+    -- =====================================
+    -- CALCULAR MONTO
+    -- =====================================
+
+    SET vNuevoMonto =
+        vMontoPendiente - pMontoPagado;
+
+    IF vNuevoMonto < 0 THEN
+
+        SET vNuevoMonto = 0;
+
+    END IF;
+
+    -- =====================================
+    -- ACTUALIZAR ADEUDO
+    -- =====================================
+
+    UPDATE Adeudos
+    SET
+
+        MontoPendiente = vNuevoMonto,
+
+        Estado = CASE
+
+            WHEN vNuevoMonto = 0
+            THEN 'Liquidado'
+
+            ELSE 'Pendiente'
+
+        END
+
+    WHERE idAdeudo = vIdAdeudo;
+
+    -- =====================================
+    -- ACTUALIZAR SOLICITUD
+    -- =====================================
+
+    UPDATE Solicitudes_Abono
+    SET
+
+        idAdministrador = pIdUsuario,
+
+        MontoAutorizado = pMontoPagado,
+
+        EstadoSolicitud = CASE
+
+            WHEN vNuevoMonto = 0
+            THEN 'Pagada'
+
+            ELSE 'Aprobada'
+
+        END,
+
+        FechaRevision = NOW()
+
+    WHERE idSolicitud = pIdSolicitud;
+
+    -- =====================================
+    -- HISTORIAL
+    -- =====================================
+
+    INSERT INTO Historial_Aprobaciones_Abono(
+
+        idSolicitud,
+        idAdministrador,
+        Accion,
+        Comentario,
+        FechaMovimiento
+
+    )
+    VALUES(
+
+        pIdSolicitud,
+        pIdUsuario,
+        'Aprobado',
+        'Abono registrado correctamente',
+        NOW()
+
+    );
+
+    -- =====================================
+    -- NOTIFICACION
+    -- =====================================
+
+    INSERT INTO Notificaciones(
+
+        idUsuario,
+        Titulo,
+        Mensaje,
+        TipoNotificacion,
+        Estado,
+        FechaNotificacion
+
+    )
+    VALUES(
+
+        pIdUsuario,
+
+        'Abono registrado',
+
+        CONCAT(
+            'Se registró un abono de $',
+            pMontoPagado,
+            ' para el contrato #',
+            pIdContrato
+        ),
+
+        'Pago',
+
+        'No leida',
+
+        NOW()
+
+    );
+
+    COMMIT;
+
+END$$
 
 DELIMITER ;

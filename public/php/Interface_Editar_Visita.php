@@ -1,15 +1,306 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+/* =========================================
+OBTENER ID VISITA
+========================================= */
+
+$idVisita = isset($_GET['id']) ? $_GET['id'] : 0;
+
+/* =========================================
+OBTENER DATOS DE LA VISITA
+========================================= */
+
+$sqlVisita = "
+    SELECT 
+        vc.idVisita,
+        vc.idUsuario,
+        vc.idInquilino,
+        vc.FechaVisita,
+        vc.Observaciones,
+        vc.Estatus,
+
+        CONCAT(
+            pu.Nombre,' ',
+            pu.ApellidoP,' ',
+            IFNULL(pu.ApellidoM,'')
+        ) AS NombreUsuario,
+
+        CONCAT(
+            pi.Nombre,' ',
+            pi.ApellidoP,' ',
+            IFNULL(pi.ApellidoM,'')
+        ) AS NombreCliente,
+
+        pi.Imagen AS ImagenCliente
+
+    FROM Visitas_Cobranza vc
+
+    INNER JOIN Usuarios u
+        ON vc.idUsuario = u.idUsuario
+
+    INNER JOIN Personas pu
+        ON u.idPersona = pu.idPersona
+
+    INNER JOIN Inquilinos i
+        ON vc.idInquilino = i.idInquilino
+
+    INNER JOIN Personas pi
+        ON i.idPersona = pi.idPersona
+
+    WHERE vc.idVisita = ?
+";
+
+$stmtVisita = $conn->prepare($sqlVisita);
+
+$stmtVisita->bind_param("i", $idVisita);
+
+$stmtVisita->execute();
+
+$resultadoVisita = $stmtVisita->get_result();
+
+$visita = $resultadoVisita->fetch_assoc();
+
+/* =========================================
+ACTUALIZAR VISITA
+========================================= */
+
+if($_SERVER["REQUEST_METHOD"] == "POST")
+{
+
+    $idUsuario       = $_POST['idUsuario'];
+    $idInquilino     = $_POST['idInquilino'];
+
+    $fecha           = $_POST['fechaVisita'];
+    $hora            = $_POST['horaVisita'];
+
+    $fechaCompleta   = $fecha . " " . $hora . ":00";
+
+    $estatus         = $_POST['estatus'];
+
+    $observaciones   = $_POST['observaciones'];
+
+    $sqlEditar = "CALL sp_EditarVisita(?, ?, ?, ?, ?, ?)";
+
+    $stmtEditar = $conn->prepare($sqlEditar);
+
+    $stmtEditar->bind_param(
+        "iiisss",
+        $idVisita,
+        $idUsuario,
+        $idInquilino,
+        $fechaCompleta,
+        $observaciones,
+        $estatus
+    );
+
+    if($stmtEditar->execute())
+    {
+        header("Location: Interface_Visitas.php");
+        exit();
+    }
+    else
+    {
+       $mensaje = "Error al registrar trabajador";
+    }
+
+}
+
+/* =========================================
+OBTENER COBRADORES
+========================================= */
+
+$sqlUsuarios = "
+    SELECT 
+        u.idUsuario,
+
+        CONCAT(
+            p.Nombre,' ',
+            p.ApellidoP,' ',
+            IFNULL(p.ApellidoM,'')
+        ) AS NombreCompleto
+
+    FROM Usuarios u
+
+    INNER JOIN Personas p
+        ON u.idPersona = p.idPersona
+";
+
+$usuarios = $conn->query($sqlUsuarios);
+
+/* =========================================
+OBTENER CLIENTES
+========================================= */
+
+$sqlClientes = "
+    SELECT 
+        i.idInquilino,
+
+        CONCAT(
+            p.Nombre,' ',
+            p.ApellidoP,' ',
+            IFNULL(p.ApellidoM,'')
+        ) AS NombreCompleto
+
+    FROM Inquilinos i
+
+    INNER JOIN Personas p
+        ON i.idPersona = p.idPersona
+";
+
+$clientes = $conn->query($sqlClientes);
+
+/* =========================================
+FORMATEAR FECHA Y HORA
+========================================= */
+
+$fecha = date("Y-m-d", strtotime($visita['FechaVisita']));
+
+$hora = date("H:i", strtotime($visita['FechaVisita']));
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Editar Visita</title>
+    <title>
+        Editar Visita
+    </title>
 
     <!-- CSS -->
     <link rel="stylesheet" href="../css/style.css">
+
     <link rel="stylesheet" href="../css/Estilo_Edicion.css">
 
 </head>
@@ -28,15 +319,20 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
 
                 <div class="brand-text">
 
-                    <h2>Sunlight Gardens</h2>
-                    <span>Panel Administrativo</span>
+                    <h2>
+                        Sunlight Gardens
+                    </h2>
+
+                    <span>
+                        Panel Administrativo
+                    </span>
 
                 </div>
 
@@ -53,7 +349,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Trabajadores</span>
+                    <span>
+                        Trabajadores
+                    </span>
 
                 </a>
 
@@ -65,7 +363,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Clientes</span>
+                    <span>
+                        Clientes
+                    </span>
 
                 </a>
 
@@ -77,7 +377,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Visitas</span>
+                    <span>
+                        Visitas
+                    </span>
 
                 </a>
 
@@ -89,7 +391,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Arrendamientos</span>
+                    <span>
+                        Arrendamientos
+                    </span>
 
                 </a>
 
@@ -101,7 +405,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Abonos</span>
+                    <span>
+                        Abonos
+                    </span>
 
                 </a>
 
@@ -113,7 +419,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Almacén Limpieza</span>
+                    <span>
+                        Almacén Limpieza
+                    </span>
 
                 </a>
 
@@ -125,7 +433,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Reportes</span>
+                    <span>
+                        Reportes
+                    </span>
 
                 </a>
 
@@ -142,7 +452,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Cerrar Sesión</span>
+                    <span>
+                        Cerrar Sesión
+                    </span>
 
                 </a>
 
@@ -173,24 +485,30 @@
                     <!-- NOTIFICACIONES -->
                     <div class="notification-wrapper">
 
-                        <img
+                        <img 
                             src="../images/icons/Notificaciones.png"
                             alt="Notificaciones"
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            3
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
                     <!-- USER -->
                     <div class="logged-user">
 
-                        <img
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                        <img 
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -201,7 +519,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -220,62 +538,67 @@
                     <!-- FOTO -->
                     <div class="profile-edit">
 
-                        <img
-                            src="../images/icons/Usuario.png"
-                            alt="Visitante"
-                            class="edit-avatar"
-                        >
+                    <img
+                        src="<?php 
+                            echo !empty($visita['ImagenCliente']) 
+                                ? '../images/person/' . $visita['ImagenCliente']
+                                : '../images/icons/Usuario.png';
+                        ?>"
+                        alt="Cliente"
+                        class="edit-avatar"
+                    />
 
                         <button class="change-photo-btn">
-                            Cambiar Foto
+                            Editar Visita
                         </button>
 
                     </div>
 
                     <!-- FORM -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                    >
 
                         <div class="form-grid">
 
-                            <!-- NOMBRE -->
+                            <!-- COBRADOR -->
                             <div class="input-group">
 
                                 <label>
-                                    Nombre del Visitante
+                                    Cobrador Responsable
                                 </label>
 
-                                <input
-                                    type="text"
-                                    value="Alejandro Ruiz"
+                                <select 
+                                    name="idUsuario"
+                                    required
                                 >
 
-                            </div>
+                                    <?php
+                                    
+                                    while($usuario = $usuarios->fetch_assoc())
+                                    {
 
-                            <!-- TELEFONO -->
-                            <div class="input-group">
+                                        $selected = ($usuario['idUsuario'] == $visita['idUsuario']) ? "selected" : "";
 
-                                <label>
-                                    Número Telefónico
-                                </label>
+                                        ?>
 
-                                <input
-                                    type="text"
-                                    value="+52 418 223 9981"
-                                >
+                                        <option 
+                                            value="<?= $usuario['idUsuario']; ?>"
+                                            <?= $selected; ?>
+                                        >
 
-                            </div>
+                                            <?= $usuario['NombreCompleto']; ?>
 
-                            <!-- CORREO -->
-                            <div class="input-group">
+                                        </option>
 
-                                <label>
-                                    Correo Electrónico
-                                </label>
+                                        <?php
 
-                                <input
-                                    type="email"
-                                    value="alejandro@gmail.com"
-                                >
+                                    }
+
+                                    ?>
+
+                                </select>
 
                             </div>
 
@@ -286,19 +609,34 @@
                                     Cliente a Visitar
                                 </label>
 
-                                <select>
+                                <select 
+                                    name="idInquilino"
+                                    required
+                                >
 
-                                    <option>
-                                        Carlos Mendoza
-                                    </option>
+                                    <?php
+                                    
+                                    while($cliente = $clientes->fetch_assoc())
+                                    {
 
-                                    <option>
-                                        Roberto Sánchez
-                                    </option>
+                                        $selected = ($cliente['idInquilino'] == $visita['idInquilino']) ? "selected" : "";
 
-                                    <option>
-                                        Laura Torres
-                                    </option>
+                                        ?>
+
+                                        <option 
+                                            value="<?= $cliente['idInquilino']; ?>"
+                                            <?= $selected; ?>
+                                        >
+
+                                            <?= $cliente['NombreCompleto']; ?>
+
+                                        </option>
+
+                                        <?php
+
+                                    }
+
+                                    ?>
 
                                 </select>
 
@@ -313,7 +651,9 @@
 
                                 <input
                                     type="date"
-                                    value="2026-05-10"
+                                    name="fechaVisita"
+                                    value="<?= $fecha; ?>"
+                                    required
                                 >
 
                             </div>
@@ -327,7 +667,9 @@
 
                                 <input
                                     type="time"
-                                    value="16:00"
+                                    name="horaVisita"
+                                    value="<?= $hora; ?>"
+                                    required
                                 >
 
                             </div>
@@ -339,39 +681,36 @@
                                     Estado de la Visita
                                 </label>
 
-                                <select>
+                                <select 
+                                    name="estatus"
+                                    required
+                                >
 
-                                    <option>
+                                    <option value="Pendiente"
+                                        <?= ($visita['Estatus'] == 'Pendiente') ? 'selected' : ''; ?>
+                                    >
                                         Pendiente
                                     </option>
 
-                                    <option selected>
+                                    <option value="En atencion"
+                                        <?= ($visita['Estatus'] == 'En atencion') ? 'selected' : ''; ?>
+                                    >
                                         En Atención
                                     </option>
 
-                                    <option>
+                                    <option value="Atendida"
+                                        <?= ($visita['Estatus'] == 'Atendida') ? 'selected' : ''; ?>
+                                    >
                                         Atendida
                                     </option>
 
-                                    <option>
+                                    <option value="Cancelada"
+                                        <?= ($visita['Estatus'] == 'Cancelada') ? 'selected' : ''; ?>
+                                    >
                                         Cancelada
                                     </option>
 
                                 </select>
-
-                            </div>
-
-                            <!-- MOTIVO -->
-                            <div class="input-group">
-
-                                <label>
-                                    Motivo de la Visita
-                                </label>
-
-                                <input
-                                    type="text"
-                                    value="Revisión de contrato"
-                                >
 
                             </div>
 
@@ -382,11 +721,10 @@
                                     Observaciones
                                 </label>
 
-                                <textarea rows="5">
-
-El visitante solicitó modificar la hora de atención y confirmar disponibilidad del cliente.
-
-                                </textarea>
+                                <textarea 
+                                    rows="5"
+                                    name="observaciones"
+                                ><?= $visita['Observaciones']; ?></textarea>
 
                             </div>
 
@@ -395,11 +733,17 @@ El visitante solicitó modificar la hora de atención y confirmar disponibilidad
                         <!-- BUTTONS -->
                         <div class="form-buttons">
 
-                            <button type="button" class="btn-cancel">
+                            <a 
+                                href="Interface_Visitas.php"
+                                class="btn-cancel"
+                            >
                                 Cancelar
-                            </button>
+                            </a>
 
-                            <button type="submit" class="btn-save">
+                            <button 
+                                type="submit"
+                                class="btn-save"
+                            >
                                 Guardar Cambios
                             </button>
 
@@ -438,57 +782,85 @@ El visitante solicitó modificar la hora de atención y confirmar disponibilidad
 
                 <div class="notification-list">
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nueva visita registrada
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró una nueva visita para el día de mañana.
-                            </p>
+?>
 
-                            <span>
-                                Hace 10 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Visita cancelada
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Un visitante canceló la reunión programada.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 35 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -513,7 +885,8 @@ El visitante solicitó modificar la hora de atención y confirmar disponibilidad
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
+        function toggleSidebar()
+        {
 
             sidebar.classList.toggle('collapsed');
 
@@ -523,7 +896,8 @@ El visitante solicitó modificar la hora de atención y confirmar disponibilidad
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
+        overlay.addEventListener('click', () =>
+        {
 
             overlay.classList.remove('active');
 
@@ -554,18 +928,64 @@ El visitante solicitó modificar la hora de atención y confirmar disponibilidad
         });
 
         /* ==============================
-        MARCAR COMO VISTA
+        MARCAR NOTIFICACIÓN
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 

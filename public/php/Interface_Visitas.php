@@ -1,3 +1,146 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+/* ==============================
+OBTENER VISITAS
+============================== */
+
+$sqlVisitas = "SELECT * FROM vw_VisitasCobranza ORDER BY FechaVisita DESC";
+
+$resultadoVisitas = mysqli_query($conn, $sqlVisitas);
+
+if(!$resultadoVisitas)
+{
+    die("Error en consulta: " . mysqli_error($conn));
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
@@ -203,6 +346,26 @@
 
         }
 
+        .visit-locked {
+
+            width: 100%;
+
+            padding: 14px;
+
+            border-radius: 16px;
+
+            background: #f3f4f6;
+
+            color: #6b7280;
+
+            font-size: 13px;
+
+            font-weight: 600;
+
+            text-align: center;
+
+        }
+
     </style>
 
 </head>
@@ -221,7 +384,7 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
@@ -372,9 +535,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            4
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -382,8 +551,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -394,7 +563,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -417,25 +586,25 @@
                             Estatus
                         </label>
 
-                        <select>
+                        <select id="estatusFiltro">
 
-                            <option>
+                            <option value="">
                                 Todos los estatus
                             </option>
 
-                            <option>
+                            <option value="pendiente">
                                 Pendiente
                             </option>
 
-                            <option>
+                            <option value="en atención">
                                 En Atención
                             </option>
 
-                            <option>
+                            <option value="atendida">
                                 Atendida
                             </option>
 
-                            <option>
+                            <option value="cancelada">
                                 Cancelada
                             </option>
 
@@ -450,27 +619,36 @@
                             Persona que Visita
                         </label>
 
-                        <select>
+                        <select id="personaFiltro">
 
-                            <option>
+                            <option value="">
                                 Todas las personas
                             </option>
 
-                            <option>
-                                Alejandro Ruiz
-                            </option>
+                            <?php
+                            
+                            mysqli_data_seek($resultadoVisitas, 0);
 
-                            <option>
-                                María González
-                            </option>
+                            while($persona = mysqli_fetch_assoc($resultadoVisitas))
+                            {
+                                $nombrePersona = 
+                                    $persona['NombreInquilino'] . " " .
+                                    $persona['ApellidoPInquilino'] . " " .
+                                    $persona['ApellidoMInquilino'];
+                                ?>
 
-                            <option>
-                                Fernanda López
-                            </option>
+                                <option value="<?php echo strtolower($nombrePersona); ?>">
 
-                            <option>
-                                Daniel Herrera
-                            </option>
+                                    <?php echo $nombrePersona; ?>
+
+                                </option>
+
+                                <?php
+                            }
+
+                            mysqli_data_seek($resultadoVisitas, 0);
+
+                            ?>
 
                         </select>
 
@@ -481,7 +659,8 @@
 
                         <input 
                             type="text"
-                            placeholder="Buscar cliente..."
+                            placeholder="Buscar visita..."
+                            id="buscador"
                         >
 
                         <a 
@@ -513,7 +692,9 @@
                         Visitas Agendadas
 
                         <span class="badge">
-                            12
+
+                            <?php echo mysqli_num_rows($resultadoVisitas); ?>
+
                         </span>
 
                     </h2>
@@ -522,290 +703,205 @@
 
                 <div class="visit-grid">
 
-                    <!-- CARD -->
-                    <div class="visit-card">
+                    <?php while($visita = mysqli_fetch_assoc($resultadoVisitas)) { ?>
 
-                        <div class="visit-header">
+                        <?php
+                        
+                        $estatusClase = "";
 
-                            <div class="visit-user">
+                        switch($visita['Estatus'])
+                        {
+                            case "Pendiente":
+                                $estatusClase = "pending";
+                            break;
 
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Visitante"
-                                >
+                            case "En Atención":
+                                $estatusClase = "progress";
+                            break;
 
-                                <div>
+                            case "Atendida":
+                                $estatusClase = "completed";
+                            break;
 
-                                    <h3>
-                                        Alejandro Ruiz
-                                    </h3>
+                            case "Cancelada":
+                                $estatusClase = "cancelled";
+                            break;
+                        }
 
-                                    <p>
-                                        Cliente: Carlos Mendoza
-                                    </p>
+                        $nombreCompletoVisita =
+                            $visita['NombreInquilino'] . " " .
+                            $visita['ApellidoPInquilino'] . " " .
+                            $visita['ApellidoMInquilino'];
 
-                                </div>
+                        ?>
 
-                            </div>
+                        <!-- CARD -->
+                        <div 
+                            class="visit-card"
+                            data-estatus="<?php echo strtolower($visita['Estatus']); ?>"
+                            data-persona="<?php echo strtolower($nombreCompletoVisita); ?>"
+                        >
 
-                            <span class="status pending">
-                                Pendiente
-                            </span>
+                            <div class="visit-header">
 
-                        </div>
+                                <div class="visit-user">
 
-                        <div class="visit-info">
+                                    <img 
+                                        src="<?php
+                                        
+                                        if(!empty($visita['ImagenInquilino']))
+                                        {
+                                            echo "../images/person/" . $visita['ImagenInquilino'];
+                                        }
+                                        else
+                                        {
+                                            echo "../images/icons/Usuario.png";
+                                        }
 
-                            <p>
+                                        ?>"
+                                        alt="Visitante"
+                                    >
 
-                                <img 
-                                    src="../images/icons/Correo.png"
-                                    alt=""
-                                >
+                                    <div>
 
-                                alejandro@gmail.com
+                                        <h3>
 
-                            </p>
+                                            <?php
+                                            
+                                            echo $nombreCompletoVisita;
 
-                            <p>
+                                            ?>
 
-                                <img 
-                                    src="../images/icons/Telefono.png"
-                                    alt=""
-                                >
+                                        </h3>
 
-                                +52 418 223 9981
+                                        <p>
 
-                            </p>
+                                            Cobrador:
 
-                            <p>
+                                            <?php
+                                            
+                                            echo $visita['NombreCobrador'] . " " .
+                                                 $visita['ApellidoPCobrador'];
 
-                                <img 
-                                    src="../images/icons/Reportes_Claro.png"
-                                    alt=""
-                                >
+                                            ?>
 
-                                10 Mayo 2026 - 4:00 PM
+                                        </p>
 
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <a href="Interface_Editar_Visita.php" class="btn-action edit">
-
-                                <img 
-                                    src="../images/icons/Editar.png"
-                                    alt="Editar"
-                                    class="action-icon"
-                                >
-
-                            </a>
-
-                            <button class="btn-action delete">
-
-                                <img 
-                                    src="../images/icons/Eliminar.png"
-                                    alt="Eliminar"
-                                    class="action-icon"
-                                >
-
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <!-- CARD -->
-                    <div class="visit-card">
-
-                        <div class="visit-header">
-
-                            <div class="visit-user">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Visitante"
-                                >
-
-                                <div>
-
-                                    <h3>
-                                        María González
-                                    </h3>
-
-                                    <p>
-                                        Cliente: Roberto Sánchez
-                                    </p>
+                                    </div>
 
                                 </div>
 
-                            </div>
+                                <span class="status <?php echo $estatusClase; ?>">
 
-                            <span class="status progress">
-                                En Atención
-                            </span>
+                                    <?php echo $visita['Estatus']; ?>
 
-                        </div>
-
-                        <div class="visit-info">
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Correo.png"
-                                    alt=""
-                                >
-
-                                maria@gmail.com
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Telefono.png"
-                                    alt=""
-                                >
-
-                                +52 477 881 0099
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Reportes_Claro.png"
-                                    alt=""
-                                >
-
-                                11 Mayo 2026 - 1:30 PM
-
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <a href="Interface_Editar_Visita.php" class="btn-action edit">
-
-                                <img 
-                                    src="../images/icons/Editar.png"
-                                    alt="Editar"
-                                    class="action-icon"
-                                >
-
-                            </a>
-
-                            <button class="btn-action delete">
-
-                                <img 
-                                    src="../images/icons/Eliminar.png"
-                                    alt="Eliminar"
-                                    class="action-icon"
-                                >
-
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <!-- CARD -->
-                    <div class="visit-card">
-
-                        <div class="visit-header">
-
-                            <div class="visit-user">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Visitante"
-                                >
-
-                                <div>
-
-                                    <h3>
-                                        Fernanda López
-                                    </h3>
-
-                                    <p>
-                                        Cliente: Jorge Ramírez
-                                    </p>
-
-                                </div>
+                                </span>
 
                             </div>
 
-                            <span class="status completed">
-                                Atendida
-                            </span>
+                            <div class="visit-info">
+
+                                <p>
+
+                                    <img 
+                                        src="../images/icons/Correo.png"
+                                        alt=""
+                                    >
+
+                                    <?php echo $visita['CorreoInquilino']; ?>
+
+                                </p>
+
+                                <p>
+
+                                    <img 
+                                        src="../images/icons/Telefono.png"
+                                        alt=""
+                                    >
+
+                                    <?php echo $visita['TelefonoInquilino']; ?>
+
+                                </p>
+
+                                <p>
+
+                                    <img 
+                                        src="../images/icons/Fecha_Visita.png"
+                                        alt=""
+                                    >
+
+                                    <?php
+                                    
+                                    echo date(
+                                        "d M Y - h:i A",
+                                        strtotime($visita['FechaVisita'])
+                                    );
+
+                                    ?>
+
+                                </p>
+
+                                <p>
+
+                                    <img 
+                                        src="../images/icons/Comentario.png"
+                                        alt=""
+                                    >
+
+                                    <?php echo $visita['Observaciones']; ?>
+
+                                </p>
+
+                            </div>
+
+                            <div class="card-footer">
+
+                                <?php if($visita['Estatus'] == "Pendiente") { ?>
+
+                                    <!-- EDITAR -->
+                                    <a 
+                                        href="Interface_Editar_Visita.php?id=<?php echo $visita['idVisita']; ?>"
+                                        class="btn-action edit"
+                                    >
+
+                                        <img 
+                                            src="../images/icons/Editar.png"
+                                            alt="Editar"
+                                            class="action-icon"
+                                        >
+
+                                    </a>
+
+                                    <!-- ELIMINAR -->
+                                    <a 
+                                        href="Eliminar_Visita.php?id=<?php echo $visita['idVisita']; ?>"
+                                        class="btn-action delete"
+                                        onclick="return confirm('¿Deseas eliminar esta visita?')"
+                                    >
+
+                                        <img 
+                                            src="../images/icons/Eliminar.png"
+                                            alt="Eliminar"
+                                            class="action-icon"
+                                        >
+
+                                    </a>
+
+                                <?php } else { ?>
+
+                                    <div class="visit-locked">
+
+                                        Visita cerrada
+
+                                    </div>
+
+                                <?php } ?>
+
+                            </div>
 
                         </div>
 
-                        <div class="visit-info">
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Correo.png"
-                                    alt=""
-                                >
-
-                                fernanda@gmail.com
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Telefono.png"
-                                    alt=""
-                                >
-
-                                +52 442 123 4455
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Reportes_Claro.png"
-                                    alt=""
-                                >
-
-                                08 Mayo 2026 - 11:00 AM
-
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <a href="Interface_Editar_Visita.php" class="btn-action edit">
-
-                                <img 
-                                    src="../images/icons/Editar.png"
-                                    alt="Editar"
-                                    class="action-icon"
-                                >
-
-                            </a>
-
-                            <button class="btn-action delete">
-
-                                <img 
-                                    src="../images/icons/Eliminar.png"
-                                    alt="Eliminar"
-                                    class="action-icon"
-                                >
-
-                            </button>
-
-                        </div>
-
-                    </div>
+                    <?php } ?>
 
                 </div>
 
@@ -838,57 +934,85 @@
 
                 <div class="notification-list">
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nueva visita registrada
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Alejandro Ruiz agendó una visita para el Local #12.
-                            </p>
+?>
 
-                            <span>
-                                Hace 5 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Visita cancelada
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Daniel Herrera canceló su visita programada.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 20 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -912,6 +1036,15 @@
         const closeModal = document.getElementById('closeModal');
 
         const checkButtons = document.querySelectorAll('.btn-check');
+
+        // FILTROS
+        const buscador = document.getElementById('buscador');
+
+        const estatusFiltro = document.getElementById('estatusFiltro');
+
+        const personaFiltro = document.getElementById('personaFiltro');
+
+        const cards = document.querySelectorAll('.visit-card');
 
         /* ==============================
         SIDEBAR
@@ -961,22 +1094,123 @@
         MARCAR COMO VISTA
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 
         });
+
+        /* ==============================
+        FILTROS
+        ============================== */
+
+        function filtrarVisitas()
+        {
+            const texto = buscador.value.toLowerCase();
+
+            const estatus = estatusFiltro.value.toLowerCase();
+
+            const persona = personaFiltro.value.toLowerCase();
+
+            cards.forEach(card =>
+            {
+                const contenido = card.innerText.toLowerCase();
+
+                const estatusCard = card.dataset.estatus;
+
+                const personaCard = card.dataset.persona;
+
+                let visible = true;
+
+                // BUSCADOR
+                if(!contenido.includes(texto))
+                {
+                    visible = false;
+                }
+
+                // FILTRO ESTATUS
+                if(estatus !== "" && estatus !== estatusCard)
+                {
+                    visible = false;
+                }
+
+                // FILTRO PERSONA
+                if(persona !== "" && persona !== personaCard)
+                {
+                    visible = false;
+                }
+
+                card.style.display = visible ? "block" : "none";
+            });
+        }
+
+        // EVENTOS
+        buscador.addEventListener("keyup", filtrarVisitas);
+
+        estatusFiltro.addEventListener("change", filtrarVisitas);
+
+        personaFiltro.addEventListener("change", filtrarVisitas);
 
     </script>
 
 </body>
 
 </html>
+
+<?php
+ob_end_flush();
+?>

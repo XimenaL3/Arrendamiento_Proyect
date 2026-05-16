@@ -1,351 +1,388 @@
+<?php
+session_start();
+ob_start();
+
+require_once "../../includes/Conexion.php";
+
+if (!$conn) {
+    die("Error de conexión a la base de datos");
+}
+
+$mensajeLogin = "";
+$mensajeRegister = "";
+
+/* ================================
+   LOGIN
+================================ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'login') {
+
+    $correo = $_POST['email'];
+    $contrasena = $_POST['password'];
+
+    $stmt = $conn->prepare("
+        SELECT 
+            u.idUsuario,
+            p.idPersona,
+            p.Nombre,
+            u.Usuario,
+            u.Contrasena,
+            u.idRol
+        FROM Usuarios u
+        INNER JOIN Personas p ON p.idPersona = u.idPersona
+        WHERE p.Correo = ?
+    ");
+
+    $stmt->bind_param("s", $correo);
+    $stmt->execute();
+    $stmt->store_result();
+
+    if ($stmt->num_rows > 0) {
+
+        $stmt->bind_result($idUsuario, $idPersona, $nombre, $usuarioDB, $hashDB, $rol);
+        $stmt->fetch();
+
+        $loginOk = false;
+
+        if (password_verify($contrasena, $hashDB)) {
+            $loginOk = true;
+        }
+        elseif ($contrasena === $hashDB) {
+            $loginOk = true;
+
+            $nuevoHash = password_hash($contrasena, PASSWORD_BCRYPT);
+
+            $update = $conn->prepare("
+                UPDATE Usuarios 
+                SET Contrasena = ?
+                WHERE idUsuario = ?
+            ");
+
+            $update->bind_param("si", $nuevoHash, $idUsuario);
+            $update->execute();
+            $update->close();
+        }
+
+        if ($loginOk) {
+
+            $_SESSION['idUsuario'] = $idUsuario;
+            $_SESSION['idPersona'] = $idPersona;
+            $_SESSION['usuario'] = $usuarioDB;
+            $_SESSION['nombre'] = $nombre;
+            $_SESSION['rol'] = $rol;
+
+            ob_clean();
+
+            switch ($rol) {
+                case 1:
+                    header("Location: Interface_Trabajadores.php");
+                    exit();
+                case 2:
+                    header("Location: Interface_Cobros_CJ.php");
+                    exit();
+                case 3:
+                    header("Location: InicioEmpleados.php");
+                    exit();
+                case 4:
+                    header("Location: Interface_Cobros_C.php");
+                    exit();
+            }
+
+        } else {
+            $mensajeLogin = "Contraseña incorrecta.";
+        }
+
+    } else {
+
+    // =========================================
+    // LOGIN INQUILINO
+    // =========================================
+
+    $stmtInq = $conn->prepare("
+        SELECT
+            i.idInquilino,
+            p.idPersona,
+            p.Nombre,
+            p.ApellidoP,
+            p.Correo,
+            p.Telefono,
+            p.Imagen
+        FROM Inquilinos i
+
+        INNER JOIN Personas p
+            ON p.idPersona = i.idPersona
+
+        WHERE p.Correo = ?
+    ");
+
+    $stmtInq->bind_param("s", $correo);
+
+    $stmtInq->execute();
+
+    $stmtInq->store_result();
+
+    if ($stmtInq->num_rows > 0) {
+
+        $stmtInq->bind_result(
+            $idInquilino,
+            $idPersonaInq,
+            $nombreInq,
+            $apellidoPInq,
+            $correoInq,
+            $telefonoInq,
+            $imagenInq
+        );
+
+        $stmtInq->fetch();
+
+        // =========================================
+        // CONTRASEÑA TEMPORAL
+        // =========================================
+        // USAREMOS EL TELEFONO COMO PASSWORD
+        // =========================================
+
+        if (trim($contrasena) === trim($telefonoInq)) {
+
+            $_SESSION['idInquilino'] = $idInquilino;
+
+            $_SESSION['idPersona'] = $idPersonaInq;
+
+            $_SESSION['nombre'] = $nombreInq;
+
+            $_SESSION['tipo_usuario'] = 'inquilino';
+
+            $_SESSION['imagen'] = $imagenInq;
+
+            ob_clean();
+
+            header("Location: Interface_Resumen.php");
+            exit();
+
+        } else {
+
+            $mensajeLogin = "Contraseña incorrecta.";
+        }
+
+    } else {
+
+        $mensajeLogin = "Usuario no encontrado.";
+    }
+
+    $stmtInq->close();
+}
+
+    $stmt->close();
+}
+
+/* ================================
+   REGISTER
+================================ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'register') {
+
+    $nombre = $_POST['nombre'];
+    $apellidoP = $_POST['apellidoP'];
+    $apellidoM = $_POST['apellidoM'];
+    $telefono = $_POST['telefono'];
+    $correo = $_POST['correo'];
+    $usuario = $_POST['usuario'];
+
+    $contrasena = password_hash($_POST['password'], PASSWORD_BCRYPT);
+    $imagen = "default.png";
+
+    $stmt = $conn->prepare("CALL sp_RegistrarTrabajador(?,?,?,?,?,?,?,?)");
+
+    $stmt->bind_param(
+        "ssssssss",
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $telefono,
+        $correo,
+        $imagen,
+        $usuario,
+        $contrasena
+    );
+
+    if ($stmt->execute()) {
+        $mensajeRegister = "Cuenta creada correctamente.";
+    } else {
+        $mensajeRegister = "Error al registrar usuario.";
+    }
+
+    $stmt->close();
+}
+
+$conn->close();
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <meta charset="UTF-8">
+<title>Sunlight Gardens | Login</title>
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>
-        Sunlight Gardens | Login
-    </title>
-
-    <!-- GOOGLE FONTS -->
-    <link
-        rel="preconnect"
-        href="https://fonts.googleapis.com"
-    >
-
-    <link
-        rel="preconnect"
-        href="https://fonts.gstatic.com"
-        crossorigin
-    >
-
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
-        rel="stylesheet"
-    >
-
-    <!-- FONT AWESOME -->
-    <link
-        rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
-    >
-
-    <!-- CSS -->
-    <link
-        rel="stylesheet"
-        href="../css/Login.css"
-    >
+<link rel="stylesheet" href="../css/Login.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 
 </head>
 
 <body>
 
-    <div class="container">
+<div class="container">
 
-        <!-- =====================================
-        PANEL IZQUIERDO
-        ====================================== -->
+    <!-- LEFT -->
+    <aside class="left-panel">
 
-        <aside class="left-panel">
+        <div class="brand">
+            <h2>Sunlight<br>Gardens</h2>
+            <p>Plataforma administrativa para la gestión residencial.</p>
+        </div>
 
-            <div class="brand">
+        <div class="menu-box">
 
-                <h2>
-                    Sunlight
-                    <br>
-                    Gardens
-                </h2>
+            <button class="menu-btn login active-btn" id="loginToggle">
+                <i class="fa-solid fa-right-to-bracket"></i>
+                Iniciar Sesión
+            </button>
 
-                <p>
-                    Plataforma administrativa para la gestión
-                    residencial, mantenimiento y control interno.
-                </p>
+            <button class="menu-btn signin" id="registerToggle">
+                <i class="fa-regular fa-user"></i>
+                Crear Cuenta
+            </button>
 
-            </div>
+        </div>
 
-            <!-- BOTONES -->
-            <div class="menu-box">
+    </aside>
 
-                <button
-                    class="menu-btn login active-btn"
-                    id="loginToggle"
-                >
+    <!-- RIGHT -->
+    <main class="right-panel">
 
-                    <i class="fa-solid fa-right-to-bracket"></i>
+        <!-- LOGIN -->
+        <div class="form-container active-form" id="loginForm">
 
-                    Iniciar Sesión
+            <h1>Bienvenido</h1>
 
-                </button>
+            <?php if ($mensajeLogin): ?>
+                <p style="color:red;text-align:center;"><?php echo $mensajeLogin; ?></p>
+            <?php endif; ?>
 
-                <button
-                    class="menu-btn signin"
-                    id="registerToggle"
-                >
+            <form method="POST">
 
-                    <i class="fa-regular fa-user"></i>
+                <input type="hidden" name="action" value="login">
 
-                    Crear Cuenta
-
-                </button>
-
-            </div>
-
-        </aside>
-
-        <!-- =====================================
-        PANEL DERECHO
-        ====================================== -->
-
-        <main class="right-panel">
-
-            <!-- =====================================
-            LOGIN FORM
-            ====================================== -->
-
-            <div
-                class="form-container active-form"
-                id="loginForm"
-            >
-
-                <div class="icon-circle">
-
-                    <i class="fa-regular fa-user"></i>
-
+                <div class="input-group">
+                    <i class="fa-solid fa-envelope"></i>
+                    <input type="email" name="email" placeholder="Correo electrónico" required>
                 </div>
 
-                <h1>
-                    Bienvenido
-                </h1>
-
-                <form>
-
-                    <!-- EMAIL -->
-                    <div class="input-group">
-
-                        <i class="fa-solid fa-envelope"></i>
-
-                        <input
-                            type="email"
-                            placeholder="Correo electrónico"
-                            required
-                        >
-
-                    </div>
-
-                    <!-- PASSWORD -->
-                    <div class="input-group">
-
-                        <i class="fa-solid fa-lock"></i>
-
-                        <input
-                            type="password"
-                            placeholder="Contraseña"
-                            required
-                        >
-
-                    </div>
-
-                    <!-- OPCIONES -->
-                    <div class="options-row">
-
-                        <label class="remember-me">
-
-                            <input type="checkbox">
-
-                            Recordarme
-
-                        </label>
-
-                        <a
-                            href="#"
-                            class="forgot"
-                        >
-                            ¿Olvidaste tu contraseña?
-                        </a>
-
-                    </div>
-
-                    <!-- BOTON -->
-                    <button
-                        type="submit"
-                        class="login-btn"
-                    >
-
-                        Ingresar
-
-                    </button>
-
-                </form>
-
-                <!-- REDES -->
-                <div class="social">
-
-                    <div>
-
-                        <i class="fa-brands fa-google"></i>
-
-                        Google
-
-                    </div>
-
-                    <div>
-
-                        <i class="fa-brands fa-facebook-f"></i>
-
-                        Facebook
-
-                    </div>
-
-                    <div>
-
-                        <i class="fa-brands fa-microsoft"></i>
-
-                        Microsoft
-
-                    </div>
-
+                <div class="input-group">
+                    <i class="fa-solid fa-lock"></i>
+                    <input type="password" name="password" placeholder="Contraseña / Telefono" required>
                 </div>
 
-            </div>
+                <button class="login-btn" type="submit">Ingresar</button>
 
-            <!-- =====================================
-            REGISTER FORM
-            ====================================== -->
+            </form>
 
-            <div
-                class="form-container"
-                id="registerForm"
-            >
+        </div>
 
-                <div class="icon-circle">
+        <!-- REGISTER -->
+        <div class="form-container" id="registerForm">
 
-                    <i class="fa-solid fa-user-plus"></i>
+            <h1>Crear Cuenta</h1>
 
+            <?php if ($mensajeRegister): ?>
+                <p style="color:green;text-align:center;"><?php echo $mensajeRegister; ?></p>
+            <?php endif; ?>
+
+            <form method="POST">
+
+                <input type="hidden" name="action" value="register">
+
+                <div class="input-group">
+                    <i class="fa-solid fa-user"></i>
+                    <input type="text" name="nombre" placeholder="Nombre completo" required>
                 </div>
 
-                <h1>
-                    Crear Cuenta
-                </h1>
+                <div class="input-group">
+                    <i class="fa-solid fa-user"></i>
+                    <input type="text" name="apellidoP" placeholder="Apellido paterno" required>
+                </div>
 
-                <form>
+                <div class="input-group">
+                    <i class="fa-solid fa-user"></i>
+                    <input type="text" name="apellidoM" placeholder="Apellido materno" required>
+                </div>
 
-                    <!-- NAME -->
-                    <div class="input-group">
+                <div class="input-group">
+                    <i class="fa-solid fa-phone"></i>
+                    <input type="text" name="telefono" placeholder="Teléfono" required>
+                </div>
 
-                        <i class="fa-solid fa-user"></i>
+                <div class="input-group">
+                    <i class="fa-solid fa-envelope"></i>
+                    <input type="email" name="correo" placeholder="Correo electrónico" required>
+                </div>
 
-                        <input
-                            type="text"
-                            placeholder="Nombre completo"
-                            required
-                        >
+                <div class="input-group">
+                    <i class="fa-solid fa-user"></i>
+                    <input type="text" name="usuario" placeholder="Usuario" required>
+                </div>
 
-                    </div>
+                <div class="input-group">
+                    <i class="fa-solid fa-lock"></i>
+                    <input type="password" name="password" placeholder="Contraseña" required>
+                </div>
 
-                    <!-- EMAIL -->
-                    <div class="input-group">
+                <button class="login-btn" type="submit">Crear Cuenta</button>
 
-                        <i class="fa-solid fa-envelope"></i>
+            </form>
 
-                        <input
-                            type="email"
-                            placeholder="Correo electrónico"
-                            required
-                        >
+        </div>
 
-                    </div>
+    </main>
 
-                    <!-- PASSWORD -->
-                    <div class="input-group">
+</div>
 
-                        <i class="fa-solid fa-lock"></i>
+<script>
 
-                        <input
-                            type="password"
-                            placeholder="Crear contraseña"
-                            required
-                        >
+const loginToggle = document.getElementById("loginToggle");
+const registerToggle = document.getElementById("registerToggle");
 
-                    </div>
+const loginForm = document.getElementById("loginForm");
+const registerForm = document.getElementById("registerForm");
 
-                    <!-- CONFIRM PASSWORD -->
-                    <div class="input-group">
+/* =========================
+   LOGIN
+========================= */
 
-                        <i class="fa-solid fa-shield-halved"></i>
+loginToggle.addEventListener("click", () => {
 
-                        <input
-                            type="password"
-                            placeholder="Confirmar contraseña"
-                            required
-                        >
+    loginForm.classList.add("active-form");
+    registerForm.classList.remove("active-form");
 
-                    </div>
+    loginToggle.classList.add("active-btn");
+    registerToggle.classList.remove("active-btn");
 
-                    <!-- BUTTON -->
-                    <button
-                        type="submit"
-                        class="login-btn"
-                    >
+});
 
-                        Crear Cuenta
+/* =========================
+   REGISTER
+========================= */
 
-                    </button>
+registerToggle.addEventListener("click", () => {
 
-                </form>
+    registerForm.classList.add("active-form");
+    loginForm.classList.remove("active-form");
 
-            </div>
+    registerToggle.classList.add("active-btn");
+    loginToggle.classList.remove("active-btn");
 
-        </main>
+});
 
-    </div>
-
-    <!-- =====================================
-    SCRIPT
-    ====================================== -->
-
-    <script>
-
-        const loginToggle = document.getElementById("loginToggle");
-
-        const registerToggle = document.getElementById("registerToggle");
-
-        const loginForm = document.getElementById("loginForm");
-
-        const registerForm = document.getElementById("registerForm");
-
-        loginToggle.addEventListener("click", () => {
-
-            loginForm.classList.add("active-form");
-
-            registerForm.classList.remove("active-form");
-
-            loginToggle.classList.add("active-btn");
-
-            registerToggle.classList.remove("active-btn");
-
-        });
-
-        registerToggle.addEventListener("click", () => {
-
-            registerForm.classList.add("active-form");
-
-            loginForm.classList.remove("active-form");
-
-            registerToggle.classList.add("active-btn");
-
-            loginToggle.classList.remove("active-btn");
-
-        });
-
-    </script>
+</script>
 
 </body>
-
 </html>

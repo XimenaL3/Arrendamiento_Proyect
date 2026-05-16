@@ -1,15 +1,176 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+// =============================================
+// OBTENER CLIENTES
+// =============================================
+
+$sqlClientes = "
+SELECT * FROM vw_Clientes
+ORDER BY idInquilino DESC
+";
+
+$resultadoClientes = mysqli_query($conn, $sqlClientes);
+
+if(!$resultadoClientes)
+{
+    die("Error en la consulta: " . mysqli_error($conn));
+}
+
+// =============================================
+// CONTAR CLIENTES
+// =============================================
+
+$totalClientes = mysqli_num_rows($resultadoClientes);
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Panel de Clientes</title>
+    <meta 
+        name="viewport" 
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Panel de Clientes
+    </title>
 
     <!-- CSS -->
-    <link rel="stylesheet" href="../css/style.css">
+    <link 
+        rel="stylesheet" 
+        href="../css/style.css"
+    >
 
 </head>
 
@@ -27,15 +188,20 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
 
                 <div class="brand-text">
 
-                    <h2>Sunlight Gardens</h2>
-                    <span>Panel Administrativo</span>
+                    <h2>
+                        Sunlight Gardens
+                    </h2>
+
+                    <span>
+                        Panel Administrativo
+                    </span>
 
                 </div>
 
@@ -52,11 +218,16 @@
                         class="menu-icon"
                     >
 
-                    <span>Trabajadores</span>
+                    <span>
+                        Trabajadores
+                    </span>
 
                 </a>
 
-                <a href="Interface_Clientes.php" class="active">
+                <a 
+                    href="Interface_Clientes.php" 
+                    class="active"
+                >
 
                     <img 
                         src="../images/icons/Clientes_Oscuro.png"
@@ -64,7 +235,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Clientes</span>
+                    <span>
+                        Clientes
+                    </span>
 
                 </a>
 
@@ -76,7 +249,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Visitas</span>
+                    <span>
+                        Visitas
+                    </span>
 
                 </a>
 
@@ -88,7 +263,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Arrendamientos</span>
+                    <span>
+                        Arrendamientos
+                    </span>
 
                 </a>
 
@@ -100,7 +277,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Abonos</span>
+                    <span>
+                        Abonos
+                    </span>
 
                 </a>
 
@@ -108,11 +287,13 @@
 
                     <img 
                         src="../images/icons/Mantenimiento_Claro.png"
-                        alt="Almacen Limpieza"
+                        alt="Almacén"
                         class="menu-icon"
                     >
 
-                    <span>Almacén Limpieza</span>
+                    <span>
+                        Almacén Limpieza
+                    </span>
 
                 </a>
 
@@ -124,7 +305,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Reportes</span>
+                    <span>
+                        Reportes
+                    </span>
 
                 </a>
 
@@ -141,7 +324,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Cerrar Sesión</span>
+                    <span>
+                        Cerrar Sesión
+                    </span>
 
                 </a>
 
@@ -170,7 +355,7 @@
                 <div class="user-profile">
 
                     <!-- NOTIFICACIONES -->
-                    <div class="notification-wrapper">
+                    <div class="notification-wrapper" id="notificationWrapper">
 
                         <img 
                             src="../images/icons/Notificaciones.png"
@@ -178,9 +363,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            3
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -188,8 +379,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -200,7 +391,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -211,64 +402,72 @@
 
             </header>
 
-            <!-- SEARCH -->
+            <!-- FILTROS -->
             <section class="search-section">
 
                 <div class="filters">
 
+                    <!-- TIPO -->
                     <div class="filter-group">
 
                         <label>
                             Tipo de Cliente
                         </label>
 
-                        <select>
+                        <select id="tipoFiltro">
 
-                            <option>
+                            <option value="">
                                 Todos
                             </option>
 
-                            <option>
-                                Comercial
+                            <option value="Bueno">
+                                Bueno
                             </option>
 
-                            <option>
-                                Residencial
+                            <option value="Nuevo">
+                                Nuevo
+                            </option>
+
+                            <option value="Malo">
+                                Malo
                             </option>
 
                         </select>
 
                     </div>
 
+                    <!-- ESTADO -->
                     <div class="filter-group">
 
                         <label>
                             Estado
                         </label>
 
-                        <select>
+                        <select id="estadoFiltro">
 
-                            <option>
-                                Activos
+                            <option value="">
+                                Todos
                             </option>
 
-                            <option>
-                                Pendientes
+                            <option value="Activo">
+                                Activo
                             </option>
 
-                            <option>
-                                Inactivos
+                            <option value="Inactivo">
+                                Inactivo
                             </option>
 
                         </select>
 
                     </div>
 
+                    <!-- BUSCADOR -->
                     <div class="search-input-wrapper">
 
                         <input 
                             type="text"
                             placeholder="Buscar cliente..."
+                            id="buscador"
                         >
 
                         <a 
@@ -300,296 +499,145 @@
                         Clientes Registrados
 
                         <span class="badge">
-                            18
+                            <?php echo $totalClientes; ?>
                         </span>
 
                     </h2>
 
                 </div>
 
-                <div class="workers-grid">
+                <div class="workers-grid" id="contenedorClientes">
 
-                    <!-- CLIENTE -->
-                    <div class="worker-card">
+                    <?php while($cliente = mysqli_fetch_assoc($resultadoClientes)) { ?>
 
-                        <div class="card-header">
+                        <?php
 
-                            <div class="worker-meta">
+                        $historial = !empty($cliente['HistorialCrediticio'])
+                            ? $cliente['HistorialCrediticio']
+                            : "Regular";
 
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Cliente"
-                                >
+                        $estadoCliente = !empty($cliente['Estado'])
+                            ? $cliente['Estado']
+                            : "Activo";
 
-                                <div class="worker-title">
+                        ?>
 
-                                    <h3>
-                                        Carlos Mendoza
-                                    </h3>
+                        <div 
+                            class="worker-card cliente-card"
+                            data-tipo="<?php echo strtolower($historial); ?>"
+                            data-estado="<?php echo strtolower($estadoCliente); ?>"
+                        >
 
-                                    <p>
-                                        Cliente Comercial
-                                    </p>
+                            <div class="card-header">
 
-                                </div>
+                                <div class="worker-meta">
 
-                            </div>
+                                    <img 
+                                        src="<?php
+                                        
+                                            if(!empty($cliente['Imagen']))
+                                            {
+                                                echo "../images/person/" . $cliente['Imagen'];
+                                            }
+                                            else
+                                            {
+                                                echo "../images/icons/Usuario.png";
+                                            }
 
-                        </div>
+                                        ?>"
+                                        alt="Cliente"
+                                    >
 
-                        <div class="card-body">
+                                    <div class="worker-title">
 
-                            <p>
+                                        <h3>
+                                            <?php echo htmlspecialchars($cliente['NombreCompleto']); ?>
+                                        </h3>
 
-                                <img 
-                                    src="../images/icons/Correo.png"
-                                    alt="Correo"
-                                    class="info-icon"
-                                >
+                                        <p>
+                                            Cliente Registrado
+                                        </p>
 
-                                carlos@gmail.com
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Telefono.png"
-                                    alt="Teléfono"
-                                    class="info-icon"
-                                >
-
-                                +52 418 120 4455
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Arrendamiento_Claro.png"
-                                    alt="Propiedad"
-                                    class="info-icon"
-                                >
-
-                                Local Comercial #12
-
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <a href="Interface_Editar_Cliente.php" class="btn-action edit">
-                                    
-                                <img 
-                                    src="../images/icons/Editar.png"
-                                    alt="Editar"
-                                    class="action-icon"
-                                >
-
-                            </a>
-                            
-                            <button class="btn-action delete">
-
-                                <img 
-                                    src="../images/icons/Eliminar.png"
-                                    alt="Eliminar"
-                                    class="action-icon"
-                                >
-
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <!-- CLIENTE -->
-                    <div class="worker-card">
-
-                        <div class="card-header">
-
-                            <div class="worker-meta">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Cliente"
-                                >
-
-                                <div class="worker-title">
-
-                                    <h3>
-                                        Fernanda López
-                                    </h3>
-
-                                    <p>
-                                        Cliente Residencial
-                                    </p>
+                                    </div>
 
                                 </div>
 
                             </div>
 
-                        </div>
+                            <div class="card-body">
 
-                        <div class="card-body">
+                                <p>
 
-                            <p>
+                                    <img 
+                                        src="../images/icons/Correo.png"
+                                        alt="Correo"
+                                        class="info-icon"
+                                    >
 
-                                <img 
-                                    src="../images/icons/Correo.png"
-                                    alt="Correo"
-                                    class="info-icon"
+                                    <?php echo htmlspecialchars($cliente['Correo']); ?>
+
+                                </p>
+
+                                <p>
+
+                                    <img 
+                                        src="../images/icons/Telefono.png"
+                                        alt="Teléfono"
+                                        class="info-icon"
+                                    >
+
+                                    <?php echo htmlspecialchars($cliente['Telefono']); ?>
+
+                                </p>
+
+                                <p>
+
+                                    <img 
+                                        src="../images/icons/Historial_Credito.png"
+                                        alt="Historial"
+                                        class="info-icon"
+                                    >
+
+                                    <?php echo htmlspecialchars($cliente['HistorialCrediticio']); ?>
+
+                                </p>
+
+                            </div>
+
+                            <div class="card-footer">
+
+                                <a 
+                                    href="Interface_Editar_Cliente.php?id=<?php echo $cliente['idInquilino']; ?>" 
+                                    class="btn-action edit"
                                 >
 
-                                fernanda@gmail.com
+                                    <img 
+                                        src="../images/icons/Editar.png"
+                                        alt="Editar"
+                                        class="action-icon"
+                                    >
 
-                            </p>
+                                </a>
 
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Telefono.png"
-                                    alt="Teléfono"
-                                    class="info-icon"
+                                <a 
+                                    href="Eliminar_Cliente.php?id=<?php echo $cliente['idInquilino']; ?>"
+                                    class="btn-action delete"
+                                    onclick="return confirm('¿Deseas eliminar este cliente?')"
                                 >
 
-                                +52 477 224 8833
+                                    <img 
+                                        src="../images/icons/Eliminar.png"
+                                        alt="Eliminar"
+                                        class="action-icon"
+                                    >
 
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Arrendamiento_Claro.png"
-                                    alt="Propiedad"
-                                    class="info-icon"
-                                >
-
-                                Casa Residencial #4
-
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <a href="Interface_Editar_Cliente.php" class="btn-action edit">
-                                    
-                                <img 
-                                    src="../images/icons/Editar.png"
-                                    alt="Editar"
-                                    class="action-icon"
-                                >
-
-                            </a>
-                            
-                            <button class="btn-action delete">
-
-                                <img 
-                                    src="../images/icons/Eliminar.png"
-                                    alt="Eliminar"
-                                    class="action-icon"
-                                >
-
-                            </button>
-
-                        </div>
-
-                    </div>
-
-                    <!-- CLIENTE -->
-                    <div class="worker-card">
-
-                        <div class="card-header">
-
-                            <div class="worker-meta">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Cliente"
-                                >
-
-                                <div class="worker-title">
-
-                                    <h3>
-                                        Alejandro Ruiz
-                                    </h3>
-
-                                    <p>
-                                        Cliente Empresarial
-                                    </p>
-
-                                </div>
+                                </a>
 
                             </div>
 
                         </div>
 
-                        <div class="card-body">
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Correo.png"
-                                    alt="Correo"
-                                    class="info-icon"
-                                >
-
-                                alejandro@gmail.com
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Telefono.png"
-                                    alt="Teléfono"
-                                    class="info-icon"
-                                >
-
-                                +52 442 991 3344
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Arrendamiento_Claro.png"
-                                    alt="Propiedad"
-                                    class="info-icon"
-                                >
-
-                                Edificio Central
-
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <a href="Interface_Editar_Cliente.php" class="btn-action edit">
-                                    
-                                <img 
-                                    src="../images/icons/Editar.png"
-                                    alt="Editar"
-                                    class="action-icon"
-                                >
-
-                            </a>
-                            
-                            <button class="btn-action delete">
-
-                                <img 
-                                    src="../images/icons/Eliminar.png"
-                                    alt="Eliminar"
-                                    class="action-icon"
-                                >
-
-                            </button>
-
-                        </div>
-
-                    </div>
+                    <?php } ?>
 
                 </div>
 
@@ -605,7 +653,7 @@
 
             </footer>
 
-            <!-- MODAL NOTIFICACIONES -->
+            <!-- MODAL -->
             <div class="notifications-modal" id="notificationsModal">
 
                 <div class="modal-header">
@@ -622,82 +670,85 @@
 
                 <div class="notification-list">
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nuevo cliente registrado
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró un nuevo cliente comercial.
-                            </p>
+?>
 
-                            <span>
-                                Hace 10 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Pago recibido
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                El cliente Carlos Mendoza realizó su pago mensual.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 30 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+            </span>
 
-                        <div class="notification-info">
+        </div>
 
-                            <h4>
-                                Contrato pendiente
-                            </h4>
+        <?php if($noti['Estado'] == 'No Leida') { ?>
 
-                            <p>
-                                Falta firma de contrato para Casa Residencial #4.
-                            </p>
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
 
-                            <span>
-                                Hace 1 hora
-                            </span>
+        <?php } ?>
 
-                        </div>
+    </div>
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+<?php
 
-                    </div>
+    }
 
-                </div>
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -708,13 +759,17 @@
     <!-- SCRIPT -->
     <script>
 
+        // =========================================
+        // ELEMENTOS
+        // =========================================
+
         const sidebar = document.getElementById('sidebar');
 
         const brandToggle = document.getElementById('brandToggle');
 
         const overlay = document.getElementById('overlay');
 
-        const notificationWrapper = document.querySelector('.notification-wrapper');
+        const notificationWrapper = document.getElementById('notificationWrapper');
 
         const notificationsModal = document.getElementById('notificationsModal');
 
@@ -722,66 +777,176 @@
 
         const checkButtons = document.querySelectorAll('.btn-check');
 
-        function toggleSidebar() {
+        // FILTROS
+        const buscador = document.getElementById('buscador');
 
+        const tipoFiltro = document.getElementById('tipoFiltro');
+
+        const estadoFiltro = document.getElementById('estadoFiltro');
+
+        const cards = document.querySelectorAll('.cliente-card');
+
+        // =========================================
+        // SIDEBAR
+        // =========================================
+
+        function toggleSidebar()
+        {
             sidebar.classList.toggle('collapsed');
 
             overlay.classList.toggle('active');
-
         }
 
         brandToggle.addEventListener('click', toggleSidebar);
 
-        overlay.addEventListener('click', () => {
+        // =========================================
+        // MODAL
+        // =========================================
 
-            overlay.classList.remove('active');
-
-            sidebar.classList.remove('collapsed');
-
-            notificationsModal.classList.remove('active');
-
-        });
-
-        /* ==============================
-        MODAL NOTIFICACIONES
-        ============================== */
-
-        notificationWrapper.addEventListener('click', () => {
-
+        notificationWrapper.addEventListener('click', () =>
+        {
             notificationsModal.classList.add('active');
 
             overlay.classList.add('active');
-
         });
 
-        closeModal.addEventListener('click', () => {
-
+        closeModal.addEventListener('click', () =>
+        {
             notificationsModal.classList.remove('active');
 
             overlay.classList.remove('active');
-
         });
 
-        /* ==============================
-        MARCAR COMO VISTA
-        ============================== */
+        overlay.addEventListener('click', () =>
+        {
+            overlay.classList.remove('active');
 
-        checkButtons.forEach(button => {
+            notificationsModal.classList.remove('active');
 
-            button.addEventListener('click', () => {
+            sidebar.classList.remove('collapsed');
+        });
 
-                const notification = button.parentElement;
+        // =========================================
+        // NOTIFICACIONES
+        // =========================================
 
-                notification.classList.add('completed');
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-                button.innerHTML = '✓';
+            button.addEventListener('click', () =>
+            {
+
+                const id = button.dataset.id;
+
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
+
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 
         });
+
+        // =========================================
+        // FILTROS
+        // =========================================
+
+        function filtrarClientes()
+        {
+            const texto = buscador.value.toLowerCase();
+
+            const tipo = tipoFiltro.value.toLowerCase();
+
+            const estado = estadoFiltro.value.toLowerCase();
+
+            cards.forEach(card =>
+            {
+                const contenido = card.innerText.toLowerCase();
+
+                const tipoCard = card.dataset.tipo;
+
+                const estadoCard = card.dataset.estado;
+
+                let visible = true;
+
+                // BUSCADOR
+                if(!contenido.includes(texto))
+                {
+                    visible = false;
+                }
+
+                // FILTRO TIPO
+                if(tipo !== "" && tipo !== tipoCard)
+                {
+                    visible = false;
+                }
+
+                // FILTRO ESTADO
+                if(estado !== "" && estado !== estadoCard)
+                {
+                    visible = false;
+                }
+
+                card.style.display = visible ? "block" : "none";
+            });
+        }
+
+        // EVENTOS
+        buscador.addEventListener("keyup", filtrarClientes);
+
+        tipoFiltro.addEventListener("change", filtrarClientes);
+
+        estadoFiltro.addEventListener("change", filtrarClientes);
 
     </script>
 
 </body>
 
 </html>
+
+<?php
+ob_end_flush();
+?>

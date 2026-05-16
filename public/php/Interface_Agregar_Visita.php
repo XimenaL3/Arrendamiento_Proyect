@@ -1,15 +1,224 @@
+<?php
+
+ob_start();
+
+session_start();
+
+if (!isset($_SESSION['idUsuario']) || ($_SESSION['rol'] ?? 0) != 1) {
+    header("Location: Login.php");
+    exit();
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+// CONEXIÓN
+require_once "../../includes/Conexion.php";
+
+// VALIDAR CONEXIÓN
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+// =============================================
+// DATOS DEL USUARIO LOGUEADO
+// =============================================
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p ON p.idPersona = u.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+if (!$stmt) {
+
+    $nombre = "Usuario";
+    $apellidoP = "";
+    $apellidoM = "";
+    $imagen = "../images/icons/Usuario.png";
+    $rol = "Sin rol";
+
+} else {
+
+    $stmt->bind_param("i", $idUsuario);
+
+    $stmt->execute();
+
+    $stmt->bind_result(
+        $nombre,
+        $apellidoP,
+        $apellidoM,
+        $imagen,
+        $rol
+    );
+
+    $stmt->fetch();
+
+    $stmt->close();
+
+    $nombre = trim($nombre);
+
+    $apellidoP = trim($apellidoP);
+
+    $apellidoM = trim($apellidoM);
+
+    $rol = trim($rol);
+
+    $imagenUsuario = (!empty($imagen))
+        ? "../images/person/" . $imagen
+        : "../images/icons/Usuario.png";
+}
+
+$nombreCompleto = $nombre . " " . $apellidoP . " " . $apellidoM;
+
+/* =========================================
+NOTIFICACIONES
+========================================= */
+
+$sqlNotificaciones = "
+SELECT *
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+ORDER BY FechaNotificacion DESC
+LIMIT 10
+";
+
+$stmtNoti = $conn->prepare($sqlNotificaciones);
+
+$stmtNoti->bind_param("i", $idUsuario);
+
+$stmtNoti->execute();
+
+$resultNoti = $stmtNoti->get_result();
+
+/* =========================================
+CONTAR NO LEÍDAS
+========================================= */
+
+$sqlCount = "
+SELECT COUNT(*) AS total
+FROM Vista_Notificaciones
+WHERE idUsuario = ?
+AND Estado = 'No Leida'
+";
+
+$stmtCount = $conn->prepare($sqlCount);
+
+$stmtCount->bind_param("i", $idUsuario);
+
+$stmtCount->execute();
+
+$resultCount = $stmtCount->get_result();
+
+$totalNotificaciones = 0;
+
+if($rowCount = $resultCount->fetch_assoc())
+{
+    $totalNotificaciones = $rowCount['total'];
+}
+
+/* =========================================
+REGISTRAR VISITA
+========================================= */
+
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+
+    $idUsuario      = $_POST['idUsuario'];
+    $idInquilino    = $_POST['idInquilino'];
+
+    $fecha          = $_POST['fechaVisita'];
+    $hora           = $_POST['horaVisita'];
+
+    $fechaCompleta  = $fecha . " " . $hora . ":00";
+
+    $observaciones  = $_POST['observaciones'];
+
+    // SIEMPRE POR DEFECTO
+    $estatus = "Pendiente";
+
+    $sql = "CALL sp_RegistrarVisita(?, ?, ?, ?, ?)";
+
+    $stmt = $conn->prepare($sql);
+
+    $stmt->bind_param(
+        "iisss",
+        $idUsuario,
+        $idInquilino,
+        $fechaCompleta,
+        $observaciones,
+        $estatus
+    );
+
+    if ($stmt->execute()) {
+        header("Location: Interface_Visitas.php");
+        exit();
+    } else {
+        echo "Error al registrar cliente: " . mysqli_error($conn);
+    }
+}
+
+/* =========================================
+OBTENER COBRADORES
+========================================= */
+
+$cobradores = $conn->query("
+    SELECT 
+        u.idUsuario,
+        CONCAT(
+            p.Nombre,' ',
+            p.ApellidoP,' ',
+            IFNULL(p.ApellidoM,'')
+        ) AS NombreCompleto
+    FROM Usuarios u
+    INNER JOIN Personas p ON u.idPersona = p.idPersona
+    INNER JOIN Roles r ON r.idRol = u.idRol
+    WHERE r.NombreRol = 'Cobrador'
+");
+
+/* =========================================
+OBTENER CLIENTES
+========================================= */
+
+$clientes = $conn->query("
+    SELECT 
+        i.idInquilino,
+        CONCAT(
+            p.Nombre,' ',
+            p.ApellidoP,' ',
+            IFNULL(p.ApellidoM,'')
+        ) AS NombreCompleto
+    FROM Inquilinos i
+    INNER JOIN Personas p
+        ON i.idPersona = p.idPersona
+");
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
     <meta charset="UTF-8">
+
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <title>Agregar Visita</title>
+    <title>
+        Agregar Visita
+    </title>
 
     <!-- CSS -->
     <link rel="stylesheet" href="../css/style.css">
+
     <link rel="stylesheet" href="../css/Estilo_Edicion.css">
 
 </head>
@@ -28,15 +237,20 @@
             <div class="brand" id="brandToggle">
 
                 <img 
-                    src="../images/icons/Usuario.png"
+                    src="../images/icons/Logo_Claro.jpeg"
                     alt="Logo"
                     class="brand-logo"
                 >
 
                 <div class="brand-text">
 
-                    <h2>Sunlight Gardens</h2>
-                    <span>Panel Administrativo</span>
+                    <h2>
+                        Sunlight Gardens
+                    </h2>
+
+                    <span>
+                        Panel Administrativo
+                    </span>
 
                 </div>
 
@@ -53,7 +267,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Trabajadores</span>
+                    <span>
+                        Trabajadores
+                    </span>
 
                 </a>
 
@@ -65,7 +281,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Clientes</span>
+                    <span>
+                        Clientes
+                    </span>
 
                 </a>
 
@@ -77,7 +295,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Visitas</span>
+                    <span>
+                        Visitas
+                    </span>
 
                 </a>
 
@@ -89,7 +309,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Arrendamientos</span>
+                    <span>
+                        Arrendamientos
+                    </span>
 
                 </a>
 
@@ -101,7 +323,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Abonos</span>
+                    <span>
+                        Abonos
+                    </span>
 
                 </a>
 
@@ -113,7 +337,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Almacén Limpieza</span>
+                    <span>
+                        Almacén Limpieza
+                    </span>
 
                 </a>
 
@@ -125,7 +351,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Reportes</span>
+                    <span>
+                        Reportes
+                    </span>
 
                 </a>
 
@@ -142,7 +370,9 @@
                         class="menu-icon"
                     >
 
-                    <span>Cerrar Sesión</span>
+                    <span>
+                        Cerrar Sesión
+                    </span>
 
                 </a>
 
@@ -179,9 +409,15 @@
                             class="top-icon"
                         >
 
+                        <?php if($totalNotificaciones > 0) { ?>
+
                         <div class="notification-badge">
-                            3
+
+                            <?php echo $totalNotificaciones; ?>
+
                         </div>
+
+                        <?php } ?>
 
                     </div>
 
@@ -189,8 +425,8 @@
                     <div class="logged-user">
 
                         <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Admin"
+                            src="<?php echo htmlspecialchars($imagenUsuario); ?>"
+                            alt="Usuario"
                             class="avatar-admin"
                         >
 
@@ -201,7 +437,7 @@
                             </small>
 
                             <strong>
-                                Sarah Johnson
+                                <?php echo htmlspecialchars($nombreCompleto); ?>
                             </strong>
 
                         </div>
@@ -217,65 +453,49 @@
 
                 <div class="edit-card">
 
-                    <!-- FOTO -->
-                    <div class="profile-edit">
-
-                        <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Visitante"
-                            class="edit-avatar"
-                        >
-
-                        <button class="change-photo-btn">
-                            Subir Foto
-                        </button>
-
-                    </div>
-
                     <!-- FORM -->
-                    <form class="edit-form">
+                    <form 
+                        class="edit-form"
+                        method="POST"
+                    >
 
                         <div class="form-grid">
 
-                            <!-- NOMBRE VISITANTE -->
+                            <!-- COBRADOR -->
                             <div class="input-group">
 
                                 <label>
-                                    Nombre del Visitante
+                                    Cobrador Responsable
                                 </label>
 
-                                <input 
-                                    type="text"
-                                    placeholder="Ejemplo: Alejandro Ruiz"
+                                <select 
+                                    name="idUsuario"
+                                    required
                                 >
 
-                            </div>
+                                    <option selected disabled>
+                                        Selecciona un cobrador
+                                    </option>
 
-                            <!-- TELEFONO -->
-                            <div class="input-group">
+                                    <?php
+                                    
+                                    while($cobrador = $cobradores->fetch_assoc()) {
 
-                                <label>
-                                    Número Telefónico
-                                </label>
+                                        ?>
 
-                                <input 
-                                    type="text"
-                                    placeholder="+52 418 000 0000"
-                                >
+                                        <option value="<?= $cobrador['idUsuario']; ?>">
 
-                            </div>
+                                            <?= $cobrador['NombreCompleto']; ?>
 
-                            <!-- CORREO -->
-                            <div class="input-group">
+                                        </option>
 
-                                <label>
-                                    Correo Electrónico
-                                </label>
+                                        <?php
 
-                                <input 
-                                    type="email"
-                                    placeholder="correo@ejemplo.com"
-                                >
+                                    }
+
+                                    ?>
+
+                                </select>
 
                             </div>
 
@@ -286,27 +506,32 @@
                                     Cliente Relacionado
                                 </label>
 
-                                <select>
+                                <select 
+                                    name="idInquilino"
+                                    required
+                                >
 
                                     <option selected disabled>
                                         Selecciona un cliente
                                     </option>
 
-                                    <option>
-                                        Carlos Mendoza
-                                    </option>
+                                    <?php
+                                    
+                                    while($cliente = $clientes->fetch_assoc()) {
 
-                                    <option>
-                                        Roberto Sánchez
-                                    </option>
+                                        ?>
 
-                                    <option>
-                                        Jorge Ramírez
-                                    </option>
+                                        <option value="<?= $cliente['idInquilino']; ?>">
 
-                                    <option>
-                                        Laura Torres
-                                    </option>
+                                            <?= $cliente['NombreCompleto']; ?>
+
+                                        </option>
+
+                                        <?php
+
+                                    }
+
+                                    ?>
 
                                 </select>
 
@@ -321,6 +546,8 @@
 
                                 <input 
                                     type="date"
+                                    name="fechaVisita"
+                                    required
                                 >
 
                             </div>
@@ -334,83 +561,9 @@
 
                                 <input 
                                     type="time"
+                                    name="horaVisita"
+                                    required
                                 >
-
-                            </div>
-
-                            <!-- ESTATUS -->
-                            <div class="input-group">
-
-                                <label>
-                                    Estado de la Visita
-                                </label>
-
-                                <select>
-
-                                    <option selected disabled>
-                                        Selecciona un estado
-                                    </option>
-
-                                    <option>
-                                        Pendiente
-                                    </option>
-
-                                    <option>
-                                        En Atención
-                                    </option>
-
-                                    <option>
-                                        Atendida
-                                    </option>
-
-                                    <option>
-                                        Cancelada
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                            <!-- IDENTIFICACION -->
-                            <div class="input-group">
-
-                                <label>
-                                    Tipo de Identificación
-                                </label>
-
-                                <select>
-
-                                    <option selected disabled>
-                                        Selecciona una opción
-                                    </option>
-
-                                    <option>
-                                        INE
-                                    </option>
-
-                                    <option>
-                                        Pasaporte
-                                    </option>
-
-                                    <option>
-                                        Licencia de Conducir
-                                    </option>
-
-                                </select>
-
-                            </div>
-
-                            <!-- MOTIVO -->
-                            <div class="input-group full-width">
-
-                                <label>
-                                    Motivo de la Visita
-                                </label>
-
-                                <textarea 
-                                    rows="4"
-                                    placeholder="Describe el motivo de la visita..."
-                                ></textarea>
 
                             </div>
 
@@ -423,6 +576,7 @@
 
                                 <textarea 
                                     rows="5"
+                                    name="observaciones"
                                     placeholder="Agrega observaciones o información importante..."
                                 ></textarea>
 
@@ -433,11 +587,17 @@
                         <!-- BUTTONS -->
                         <div class="form-buttons">
 
-                            <button type="reset" class="btn-cancel">
+                            <button 
+                                type="reset"
+                                class="btn-cancel"
+                            >
                                 Limpiar
                             </button>
 
-                            <button type="submit" class="btn-save">
+                            <button 
+                                type="submit"
+                                class="btn-save"
+                            >
                                 Registrar Visita
                             </button>
 
@@ -476,57 +636,85 @@
 
                 <div class="notification-list">
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+<?php
 
-                        <div class="notification-info">
+if($resultNoti->num_rows > 0)
+{
 
-                            <h4>
-                                Nueva visita agendada
-                            </h4>
+    while($noti = $resultNoti->fetch_assoc())
+    {
 
-                            <p>
-                                Se registró una nueva visita para el cliente Carlos Mendoza.
-                            </p>
+?>
 
-                            <span>
-                                Hace 5 minutos
-                            </span>
+    <div class="notification-item <?php echo ($noti['Estado'] == 'Leida') ? 'completed' : ''; ?>">
 
-                        </div>
+        <div class="notification-info">
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+            <h4>
 
-                    </div>
+                <?php echo htmlspecialchars($noti['Titulo']); ?>
 
-                    <!-- NOTIFICACION -->
-                    <div class="notification-item">
+            </h4>
 
-                        <div class="notification-info">
+            <p>
 
-                            <h4>
-                                Visita pendiente
-                            </h4>
+                <?php echo htmlspecialchars($noti['Mensaje']); ?>
 
-                            <p>
-                                Existe una visita pendiente de confirmación.
-                            </p>
+            </p>
 
-                            <span>
-                                Hace 18 minutos
-                            </span>
+            <span>
 
-                        </div>
+                <?php
 
-                        <button class="btn-check">
-                            ✓
-                        </button>
+                if($noti['MinutosTranscurridos'] < 60)
+                {
+                    echo "Hace " . $noti['MinutosTranscurridos'] . " minutos";
+                }
+                else if($noti['MinutosTranscurridos'] < 1440)
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 60) . " horas";
+                }
+                else
+                {
+                    echo "Hace " . floor($noti['MinutosTranscurridos'] / 1440) . " días";
+                }
 
-                    </div>
+                ?>
 
-                </div>
+            </span>
+
+        </div>
+
+        <?php if($noti['Estado'] == 'No Leida') { ?>
+
+        <button 
+            class="btn-check"
+            data-id="<?php echo $noti['idNotificacion']; ?>"
+        >
+            ✓
+        </button>
+
+        <?php } ?>
+
+    </div>
+
+<?php
+
+    }
+
+}
+else
+{
+
+?>
+
+<p>
+    No hay notificaciones.
+</p>
+
+<?php } ?>
+
+</div>
 
             </div>
 
@@ -592,18 +780,64 @@
         });
 
         /* ==============================
-        MARCAR COMO VISTA
+        MARCAR NOTIFICACIÓN
         ============================== */
 
-        checkButtons.forEach(button => {
+        document.querySelectorAll('.btn-check').forEach(button =>
+        {
 
-            button.addEventListener('click', () => {
+            button.addEventListener('click', () =>
+            {
 
-                const notification = button.parentElement;
+                const id = button.dataset.id;
 
-                notification.classList.add('completed');
+                fetch('Marcar_Notificacion.php',
+                {
+                    method: 'POST',
 
-                button.innerHTML = '✓';
+                    headers:
+                    {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idNotificacion=' + id
+                })
+                .then(response => response.text())
+                .then(data =>
+                {
+
+                    if(data === "OK")
+                    {
+
+                        const notification = button.parentElement;
+
+                        notification.classList.add('completed');
+
+                        button.remove();
+
+                        const badge = document.querySelector('.notification-badge');
+
+                        if(badge)
+                        {
+
+                            let total = parseInt(badge.innerText);
+
+                            total--;
+
+                            if(total <= 0)
+                            {
+                                badge.remove();
+                            }
+                            else
+                            {
+                                badge.innerText = total;
+                            }
+
+                        }
+
+                    }
+
+                });
 
             });
 
