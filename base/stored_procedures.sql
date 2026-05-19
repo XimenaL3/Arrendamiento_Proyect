@@ -1552,3 +1552,128 @@ BEGIN
 END$$
 
 DELIMITER ;
+
+/* =========================================================
+PROCEDIMIENTO: DESCONTAR PRODUCTOS DE BODEGA
+========================================================= */
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_DescontarProductoBodega(
+
+    IN p_idProducto INT,
+    IN p_cantidad INT
+
+)
+BEGIN
+
+    DECLARE stockActual INT;
+
+    /* =========================================
+    OBTENER STOCK ACTUAL
+    ========================================= */
+
+    SELECT CantidadDisponible
+    INTO stockActual
+    FROM Bodega_Inventario
+    WHERE idProducto = p_idProducto;
+
+    /* =========================================
+    VALIDAR EXISTENCIA
+    ========================================= */
+
+    IF stockActual IS NULL THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'El producto no existe';
+
+    END IF;
+
+    /* =========================================
+    VALIDAR STOCK DISPONIBLE
+    ========================================= */
+
+    IF stockActual < p_cantidad THEN
+
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Stock insuficiente en bodega';
+
+    END IF;
+
+    /* =========================================
+    DESCONTAR PRODUCTO
+    ========================================= */
+
+    UPDATE Bodega_Inventario
+    SET CantidadDisponible = CantidadDisponible - p_cantidad
+    WHERE idProducto = p_idProducto;
+
+END$$
+
+DELIMITER ;
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_RegistrarMantenimientoDetalle(
+    
+    IN p_idReporte INT,
+    IN p_idUsuario INT,
+    IN p_idProducto INT,
+    IN p_TareaRealizada TEXT,
+    IN p_FechaFin DATETIME
+
+)
+
+BEGIN
+
+    DECLARE v_idPropiedad INT;
+    DECLARE v_FechaInicio DATETIME;
+
+    SELECT idPropiedad, FechaRegistro
+    INTO v_idPropiedad, v_FechaInicio
+    FROM Reportes
+    WHERE idReporte = p_idReporte
+    LIMIT 1;
+
+    IF v_idPropiedad IS NULL THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'Reporte no encontrado';
+    END IF;
+
+    INSERT INTO Mantenimiento_Detalle(
+        idReporte,
+        idPropiedad,
+        idUsuario,
+        idProducto,
+        TareaRealizada,
+        FechaInicio,
+        FechaFin
+    )
+    VALUES(
+        p_idReporte,
+        v_idPropiedad,
+        p_idUsuario,
+        p_idProducto,
+        p_TareaRealizada,
+        v_FechaInicio,
+        p_FechaFin
+    );
+
+END $$
+
+DELIMITER ;
+
+DELIMITER $$
+
+CREATE PROCEDURE sp_FinalizarReporte(
+    IN p_idReporte INT
+)
+BEGIN
+
+    UPDATE Reportes
+    SET Estado = 'Finalizado'
+    WHERE idReporte = p_idReporte;
+
+END $$
+
+DELIMITER ;

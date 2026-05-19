@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $_POST['action'] === 'login') {
                     header("Location: Interface_Cobros_CJ.php");
                     exit();
                 case 3:
-                    header("Location: InicioEmpleados.php");
+                    header("Location: Interface_Productos_Limpieza_M.php");
                     exit();
                 case 4:
                     header("Location: Interface_Cobros_C.php");

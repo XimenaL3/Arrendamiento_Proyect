@@ -224,300 +224,478 @@ $stmtVis->close();
 
     <style>
 
-        .main-content-clean {
+        *{
 
-            padding: 40px 60px;
-            width: 100%;
-
-        }
-
-        .topbar-clean {
-
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
+            margin:0;
+            padding:0;
+            box-sizing:border-box;
+            font-family:'Poppins',sans-serif;
 
         }
 
-        .topbar-clean h1 {
+        body{
 
-            font-size: 30px;
-            font-weight: 800;
-
-        }
-
-        .muted {
-
-            color: var(--text-muted);
-            font-size: 13px;
+            background:#f3f3f3;
+            color:#111;
+            min-height:100vh;
+            overflow:hidden;
 
         }
 
-        .header-right {
+        .dashboard{
 
-            display: flex;
-            align-items: center;
-            gap: 14px;
-
-        }
-
-        .logout-circle {
-
-            width: 52px;
-            height: 52px;
-            border-radius: 50%;
-            background: var(--white);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: var(--shadow);
-            cursor: pointer;
+            display:grid;
+            grid-template-columns: 420px 1fr;
+            gap:0;
+            min-height:100vh;
 
         }
 
-        .logout-circle img {
+        .left-panel{
 
-            width: 22px;
-            height: 22px;
+            background:#0d0d0d;
+            padding:28px;
+            color:#fff;
 
-        }
+            height:100vh;
+            position:sticky;
+            top:0;
 
-        .user-box {
-
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            background: var(--white);
-            padding: 10px 16px;
-            border-radius: 18px;
-            box-shadow: var(--shadow);
+            overflow-y:auto;
 
         }
 
-        .user-avatar {
+        .left-panel::-webkit-scrollbar{
 
-            width: 52px;
-            height: 52px;
-            border-radius: 50%;
-            object-fit: cover;
+            width:6px;
 
         }
 
-        .grid-clean {
+        .left-panel::-webkit-scrollbar-thumb{
 
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 20px;
-
-        }
-
-        .card-clean {
-
-            background: var(--white);
-            border-radius: 18px;
-            padding: 18px;
-            box-shadow: var(--shadow);
+            background:#444;
+            border-radius:20px;
 
         }
 
-        .property-img {
+        .right-panel{
 
-            width: 100%;
-            height: 180px;
-            border-radius: 18px;
-            object-fit: cover;
-            margin-bottom: 14px;
+            display:flex;
+            flex-direction:column;
+            gap:24px;
+            padding:28px;
 
-        }
-
-        .info-row {
-
-            display: flex;
-            justify-content: space-between;
-            margin: 8px 0;
-            font-size: 14px;
+            height:100vh;
+            overflow-y:auto;
 
         }
 
-        .progress-bar {
+        .overview-title h1{
 
-            width: 100%;
-            height: 10px;
-            background: #e5e7eb;
-            border-radius: 20px;
-            overflow: hidden;
-            margin-top: 12px;
+            font-size:36px;
+            font-weight:800;
+            margin-bottom:8px;
 
         }
 
-        .progress {
+        .overview-title p{
 
-            height: 100%;
-            background: #000;
-
-        }
-
-        .badge {
-
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 600;
+            color:#a1a1a1;
+            font-size:14px;
 
         }
 
-        .pendiente {
+        .filter-box{
 
-            background: #fff7cd;
-            color: #a16207;
-
-        }
-
-        .atendido {
-
-            background: #dcfce7;
-            color: #166534;
+            margin-top:28px;
+            margin-bottom:24px;
 
         }
 
-        .cancelado {
+        .filter-box select{
 
-            background: #fee2e2;
-            color: #991b1b;
-
-        }
-
-        .section-title-clean {
-
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 22px;
-            font-weight: bold;
-            margin: 35px 0 18px;
+            width:100%;
+            background:#1a1a1a;
+            border:1px solid #2a2a2a;
+            color:#fff;
+            padding:14px 16px;
+            border-radius:16px;
+            outline:none;
+            font-size:14px;
 
         }
 
-        .section-title-clean img {
+        .reports-container{
 
-            width: 22px;
-
-        }
-
-        .report-description {
-
-            margin-top: 10px;
-            line-height: 1.6;
-            color: var(--text-muted);
+            display:flex;
+            flex-direction:column;
+            gap:18px;
 
         }
 
-        .report-meta {
+        .report-card{
 
-            margin-top: 14px;
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-
-        }
-
-        .meta-box {
-
-            background: #f8fafc;
-            border-radius: 14px;
-            padding: 10px 14px;
-            flex: 1;
+            background:#181818;
+            border:1px solid #2a2a2a;
+            border-radius:24px;
+            padding:20px;
+            transition:.3s ease;
 
         }
 
-        .evidence-box img {
+        .report-card:hover{
 
-            width: 100%;
-            height: 170px;
-            object-fit: cover;
-            border-radius: 16px;
-            margin-top: 15px;
-            cursor: pointer;
+            transform:translateY(-3px);
 
         }
 
-        .table-wrapper {
+        .report-top{
 
-            background: white;
-            border-radius: 18px;
-            overflow: hidden;
-            box-shadow: var(--shadow);
-
-        }
-
-        table {
-
-            width: 100%;
-            border-collapse: collapse;
+            display:flex;
+            justify-content:space-between;
+            align-items:flex-start;
+            gap:12px;
 
         }
 
-        th {
+        .report-top h3{
 
-            background: #f9fafb;
-            padding: 16px;
-            text-align: left;
-
-        }
-
-        td {
-
-            padding: 16px;
-            border-top: 1px solid #eee;
+            color:#fff;
+            font-size:18px;
+            font-weight:700;
 
         }
 
-        .visit-person {
+        .report-description{
 
-            display: flex;
-            align-items: center;
-            gap: 12px;
-
-        }
-
-        .visit-person img {
-
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            object-fit: cover;
+            color:#b5b5b5;
+            margin-top:14px;
+            line-height:1.6;
+            font-size:14px;
 
         }
 
-        .image-modal {
+        .report-meta{
 
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,.75);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            opacity: 0;
-            visibility: hidden;
-            transition: .3s ease;
-            z-index: 999;
+            display:grid;
+            grid-template-columns:1fr 1fr;
+            gap:12px;
+            margin-top:18px;
 
         }
 
-        .image-modal.active {
+        .meta-box{
 
-            opacity: 1;
-            visibility: visible;
+            background:#202020;
+            border-radius:16px;
+            padding:14px;
 
         }
 
-        .image-modal img {
+        .meta-box span{
 
-            width: 80%;
-            max-width: 900px;
-            border-radius: 20px;
+            display:block;
+            color:#8f8f8f;
+            font-size:12px;
+            margin-bottom:5px;
+
+        }
+
+        .meta-box strong{
+
+            color:#fff;
+            font-size:14px;
+
+        }
+
+        .report-image{
+
+            width:100%;
+            height:180px;
+            object-fit:cover;
+            border-radius:18px;
+            margin-top:18px;
+            cursor:pointer;
+
+        }
+
+        .badge{
+
+            padding:8px 14px;
+            border-radius:14px;
+            font-size:12px;
+            font-weight:700;
+            white-space:nowrap;
+
+        }
+
+        .pendiente{
+
+            background:#2d2d2d;
+            color:#d4d4d4;
+
+        }
+
+        .atendido{
+
+            background:#fff;
+            color:#000;
+
+        }
+
+        .cancelado{
+
+            background:#3a3a3a;
+            color:#c5c5c5;
+
+        }
+
+        .top-right{
+
+            display:flex;
+            justify-content:flex-end;
+            align-items:center;
+
+        }
+
+        .user-box{
+
+            display:flex;
+            align-items:center;
+            gap:14px;
+            background:#fff;
+            border-radius:22px;
+            padding:10px 18px;
+            box-shadow:0 10px 25px rgba(0,0,0,.05);
+
+        }
+
+        .user-avatar{
+
+            width:58px;
+            height:58px;
+            border-radius:50%;
+            object-fit:cover;
+
+        }
+
+        .user-box small{
+
+            color:#777;
+            display:block;
+            margin-bottom:4px;
+
+        }
+
+        .logout-btn{
+
+            width:54px;
+            height:54px;
+            background:#fff;
+            border-radius:50%;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+
+            margin-right:14px;
+
+            box-shadow:0 10px 25px rgba(0,0,0,.05);
+
+        }
+
+        .logout-btn img{
+
+            width:22px;
+
+        }
+
+        .card{
+
+            background:#fff;
+            border-radius:30px;
+            padding:24px;
+            box-shadow:0 10px 25px rgba(0,0,0,.04);
+
+        }
+
+        .property-card{
+
+            display:grid;
+            grid-template-columns:280px 1fr;
+            gap:26px;
+            align-items:center;
+
+        }
+
+        .property-image{
+
+            width:100%;
+            height:250px;
+            object-fit:cover;
+            border-radius:24px;
+
+        }
+
+        .property-content h2{
+
+            font-size:34px;
+            font-weight:800;
+            margin-bottom:10px;
+
+        }
+
+        .property-sub{
+
+            color:#777;
+            margin-bottom:24px;
+
+        }
+
+        .info-line{
+
+            display:flex;
+            justify-content:space-between;
+            margin-bottom:15px;
+            font-size:15px;
+
+        }
+
+        .progress-container{
+
+            width:100%;
+            height:12px;
+            background:#e6e6e6;
+            border-radius:30px;
+            overflow:hidden;
+            margin-top:10px;
+
+        }
+
+        .progress-bar{
+
+            height:100%;
+            background:#000;
+            border-radius:30px;
+
+        }
+
+        .progress-text{
+
+            margin-top:10px;
+            color:#666;
+            font-size:14px;
+
+        }
+
+        .section-title{
+
+            font-size:25px;
+            font-weight:800;
+            margin-bottom:18px;
+
+        }
+
+        .table-wrapper{
+
+            overflow-x:auto;
+
+        }
+
+        table{
+
+            width:100%;
+            border-collapse:collapse;
+
+        }
+
+        th{
+
+            background:#f7f7f7;
+            color:#666;
+            text-align:left;
+            padding:18px;
+            font-size:14px;
+
+        }
+
+        td{
+
+            padding:18px;
+            border-top:1px solid #efefef;
+            font-size:14px;
+
+        }
+
+        .visit-person{
+
+            display:flex;
+            align-items:center;
+            gap:12px;
+
+        }
+
+        .visit-person img{
+
+            width:48px;
+            height:48px;
+            border-radius:50%;
+            object-fit:cover;
+
+        }
+
+        .image-modal{
+
+            position:fixed;
+            inset:0;
+            background:rgba(0,0,0,.8);
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            opacity:0;
+            visibility:hidden;
+            transition:.3s ease;
+            z-index:999;
+
+        }
+
+        .image-modal.active{
+
+            opacity:1;
+            visibility:visible;
+
+        }
+
+        .image-modal img{
+
+            width:80%;
+            max-width:900px;
+            border-radius:24px;
+
+        }
+
+        @media(max-width:1200px){
+
+            .dashboard{
+
+                grid-template-columns:1fr;
+
+            }
+
+            .left-panel{
+
+                height:auto;
+
+            }
+
+        }
+
+        @media(max-width:800px){
+
+            .property-card{
+
+                grid-template-columns:1fr;
+
+            }
 
         }
 
@@ -527,27 +705,152 @@ $stmtVis->close();
 
 <body>
 
-<div class="main-content-clean">
+<div class="dashboard">
 
-    <!-- HEADER -->
+    <!-- PANEL IZQUIERDO -->
 
-    <div class="topbar-clean">
+    <div class="left-panel">
 
-        <div>
+        <div class="overview-title">
 
             <h1>
-                Resumen del Inquilino
+                Tus Reportes
             </h1>
 
-            <p class="muted">
-                Consulta tus propiedades, adeudos, reportes y visitas
+            <p>
+                Gestiona y consulta tus reportes en tiempo real
             </p>
 
         </div>
 
-        <div class="header-right">
+        <!-- FILTRO -->
 
-            <a href="Login.php" class="logout-circle">
+        <div class="filter-box">
+
+            <select id="filtroReportes">
+
+                <option value="todos">
+                    Todos los reportes
+                </option>
+
+                <option value="Pendiente">
+                    Pendientes
+                </option>
+
+                <option value="En proceso">
+                    En proceso
+                </option>
+
+                <option value="Finalizado">
+                    Finalizados
+                </option>
+
+                <option value="Cancelado">
+                    Cancelados
+                </option>
+
+            </select>
+
+        </div>
+
+        <!-- REPORTES -->
+
+        <div class="reports-container" id="contenedorReportes">
+
+            <?php foreach ($reportes as $reporte): ?>
+
+                <?php
+
+                    $claseEstado = "pendiente";
+
+                    if ($reporte['Estado'] == 'Atendido') {
+
+                        $claseEstado = "atendido";
+
+                    }
+
+                    if ($reporte['Estado'] == 'Cancelado') {
+
+                        $claseEstado = "cancelado";
+
+                    }
+
+                ?>
+
+                <div 
+                    class="report-card"
+                    data-estado="<?= htmlspecialchars($reporte['Estado']) ?>"
+                >
+
+                    <div class="report-top">
+
+                        <h3>
+                            <?= htmlspecialchars($reporte['Titulo']) ?>
+                        </h3>
+
+                        <span class="badge <?= $claseEstado ?>">
+
+                            <?= htmlspecialchars($reporte['Estado']) ?>
+
+                        </span>
+
+                    </div>
+
+                    <p class="report-description">
+
+                        <?= htmlspecialchars($reporte['Descripcion']) ?>
+
+                    </p>
+
+                    <div class="report-meta">
+
+                        <div class="meta-box">
+
+                            <span>
+                                Tipo
+                            </span>
+
+                            <strong>
+                                <?= htmlspecialchars($reporte['TipoReporte']) ?>
+                            </strong>
+
+                        </div>
+
+                        <div class="meta-box">
+
+                            <span>
+                                Prioridad
+                            </span>
+
+                            <strong>
+                                <?= htmlspecialchars($reporte['Prioridad']) ?>
+                            </strong>
+
+                        </div>
+
+                    </div>
+
+                    <img 
+                        src="../images/reports/<?= htmlspecialchars($reporte['Evidencia']) ?>"
+                        class="report-image"
+                        onclick="openModal(this.src)"
+                    >
+
+                </div>
+
+            <?php endforeach; ?>
+
+        </div>
+
+    </div>
+
+    <!-- PANEL DERECHO -->
+
+    <div class="right-panel">
+
+        <div class="top-right">
+
+            <a href="Login.php" class="logout-btn">
 
                 <img 
                     src="../images/icons/Cerrar_Oscuro.png"
@@ -579,19 +882,7 @@ $stmtVis->close();
 
         </div>
 
-    </div>
-
-    <!-- PROPIEDADES -->
-
-    <div class="section-title-clean">
-
-        <img src="../images/icons/Casa_Claro.png">
-
-        Propiedades en renta
-
-    </div>
-
-    <div class="grid-clean">
+        <!-- PROPIEDADES -->
 
         <?php foreach ($propiedades as $propiedad): ?>
 
@@ -610,65 +901,73 @@ $stmtVis->close();
 
             ?>
 
-            <div class="card-clean">
+            <div class="card property-card">
 
                 <img 
                     src="../../<?= htmlspecialchars($propiedad['Imagen']) ?>"
-                    class="property-img"
+                    class="property-image"
                 >
 
-                <h3>
-                    <?= htmlspecialchars($propiedad['Propiedad']) ?>
-                </h3>
+                <div class="property-content">
 
-                <div class="info-row">
+                    <h2>
+                        <?= htmlspecialchars($propiedad['Propiedad']) ?>
+                    </h2>
 
-                    <span>
-                        Deuda inicial
-                    </span>
+                    <p class="property-sub">
+                        Estado de renta y progreso de pago
+                    </p>
 
-                    <strong>
-                        $<?= number_format($propiedad['MontoTotal'], 2) ?>
-                    </strong>
+                    <div class="info-line">
 
-                </div>
+                        <span>
+                            Deuda inicial
+                        </span>
 
-                <div class="info-row">
+                        <strong>
+                            $<?= number_format($propiedad['MontoTotal'], 2) ?>
+                        </strong>
 
-                    <span>
-                        Deuda actual
-                    </span>
+                    </div>
 
-                    <strong>
-                        $<?= number_format($propiedad['MontoPendiente'], 2) ?>
-                    </strong>
+                    <div class="info-line">
 
-                </div>
+                        <span>
+                            Deuda actual
+                        </span>
 
-                <div class="progress-bar">
+                        <strong>
+                            $<?= number_format($propiedad['MontoPendiente'], 2) ?>
+                        </strong>
 
-                    <div 
-                        class="progress"
-                        style="width:<?= $pagado ?>%;"
-                    ></div>
+                    </div>
 
-                </div>
+                    <div class="info-line">
 
-                <p class="muted" style="margin-top:10px;">
+                        <span>
+                            Fecha límite
+                        </span>
 
-                    <?= round($pagado) ?>% pagado
+                        <strong>
+                            <?= date("d/m/Y", strtotime($propiedad['FechaLimite'])) ?>
+                        </strong>
 
-                </p>
+                    </div>
 
-                <div class="info-row">
+                    <div class="progress-container">
 
-                    <span>
-                        Fecha límite
-                    </span>
+                        <div 
+                            class="progress-bar"
+                            style="width:<?= $pagado ?>%;"
+                        ></div>
 
-                    <strong>
-                        <?= date("d/m/Y", strtotime($propiedad['FechaLimite'])) ?>
-                    </strong>
+                    </div>
+
+                    <p class="progress-text">
+
+                        <?= round($pagado) ?>% pagado
+
+                    </p>
 
                 </div>
 
@@ -676,231 +975,146 @@ $stmtVis->close();
 
         <?php endforeach; ?>
 
-    </div>
+        <!-- VISITAS -->
 
-    <!-- REPORTES -->
+        <div class="card">
 
-    <div class="section-title-clean">
+            <h2 class="section-title">
+                Visitas programadas
+            </h2>
 
-        <img src="../images/icons/Reporte_Claro.png">
+            <div class="table-wrapper">
 
-        Reportes realizados
+                <table>
 
-    </div>
+                    <thead>
 
-    <div class="grid-clean">
+                        <tr>
 
-        <?php foreach ($reportes as $reporte): ?>
+                            <th>
+                                Persona asignada
+                            </th>
 
-            <?php
+                            <th>
+                                Observaciones
+                            </th>
 
-                $claseEstado = "pendiente";
+                            <th>
+                                Fecha
+                            </th>
 
-                if ($reporte['Estado'] == 'Atendido') {
+                            <th>
+                                Estado
+                            </th>
 
-                    $claseEstado = "atendido";
+                        </tr>
 
-                }
+                    </thead>
 
-                if ($reporte['Estado'] == 'Cancelado') {
+                    <tbody>
 
-                    $claseEstado = "cancelado";
+                        <?php foreach ($visitas as $visita): ?>
 
-                }
+                            <?php
 
-            ?>
+                                $estadoVisita = "pendiente";
 
-            <div class="card-clean">
+                                if ($visita['Estatus'] == 'Confirmada') {
 
-                <div style="display:flex;justify-content:space-between;gap:10px;">
+                                    $estadoVisita = "atendido";
 
-                    <h3>
-                        <?= htmlspecialchars($reporte['Titulo']) ?>
-                    </h3>
+                                }
 
-                    <span class="badge <?= $claseEstado ?>">
+                                if ($visita['Estatus'] == 'Cancelada') {
 
-                        <?= htmlspecialchars($reporte['Estado']) ?>
+                                    $estadoVisita = "cancelado";
 
-                    </span>
+                                }
 
-                </div>
+                                $imagenCobrador = !empty($visita['ImagenCobrador'])
+                                    ? "../images/person/" . $visita['ImagenCobrador']
+                                    : "../images/icons/Usuario.png";
 
-                <p class="report-description">
+                            ?>
 
-                    <?= htmlspecialchars($reporte['Descripcion']) ?>
+                            <tr>
 
-                </p>
+                                <td>
 
-                <div class="report-meta">
+                                    <div class="visit-person">
 
-                    <div class="meta-box">
+                                        <img src="<?= htmlspecialchars($imagenCobrador) ?>">
 
-                        <span>
-                            Tipo
-                        </span>
+                                        <div>
 
-                        <strong>
-                            <?= htmlspecialchars($reporte['TipoReporte']) ?>
-                        </strong>
+                                            <strong>
 
-                    </div>
+                                                <?= htmlspecialchars(
+                                                    $visita['NombreCobrador'] . ' ' .
+                                                    $visita['ApellidoPCobrador']
+                                                ) ?>
 
-                    <div class="meta-box">
+                                            </strong>
 
-                        <span>
-                            Prioridad
-                        </span>
+                                            <br>
 
-                        <strong>
-                            <?= htmlspecialchars($reporte['Prioridad']) ?>
-                        </strong>
+                                            <small>
 
-                    </div>
+                                                <?= htmlspecialchars($visita['NombreRol']) ?>
 
-                </div>
+                                            </small>
 
-                <div class="evidence-box">
+                                        </div>
 
-                    <img 
-                        src="../images/reports/<?= htmlspecialchars($reporte['Evidencia']) ?>"
-                        onclick="openModal(this.src)"
-                    >
+                                    </div>
 
-                </div>
+                                </td>
+
+                                <td>
+
+                                    <?= htmlspecialchars($visita['Observaciones']) ?>
+
+                                </td>
+
+                                <td>
+
+                                    <?= date("d/m/Y", strtotime($visita['FechaVisita'])) ?>
+
+                                </td>
+
+                                <td>
+
+                                    <span class="badge <?= $estadoVisita ?>">
+
+                                        <?= htmlspecialchars($visita['Estatus']) ?>
+
+                                    </span>
+
+                                </td>
+
+                            </tr>
+
+                        <?php endforeach; ?>
+
+                    </tbody>
+
+                </table>
 
             </div>
 
-        <?php endforeach; ?>
+        </div>
 
-    </div>
+        <!-- FOOTER -->
+        <footer class="footer">
 
-    <!-- VISITAS -->
+            <p>
 
-    <div class="section-title-clean">
+                © 2026 DiamondsCorporation.
+                Todos los derechos reservados.
 
-        <img src="../images/icons/Calendario_Claro.png">
+            </p>
 
-        Visitas programadas
-
-    </div>
-
-    <div class="table-wrapper">
-
-        <table>
-
-            <thead>
-
-                <tr>
-
-                    <th>
-                        Persona asignada
-                    </th>
-
-                    <th>
-                        Observaciones
-                    </th>
-
-                    <th>
-                        Fecha
-                    </th>
-
-                    <th>
-                        Estado
-                    </th>
-
-                </tr>
-
-            </thead>
-
-            <tbody>
-
-                <?php foreach ($visitas as $visita): ?>
-
-                    <?php
-
-                        $estadoVisita = "pendiente";
-
-                        if ($visita['Estatus'] == 'Confirmada') {
-
-                            $estadoVisita = "atendido";
-
-                        }
-
-                        if ($visita['Estatus'] == 'Cancelada') {
-
-                            $estadoVisita = "cancelado";
-
-                        }
-
-                        $imagenCobrador = !empty($visita['ImagenCobrador'])
-                            ? "../images/person/" . $visita['ImagenCobrador']
-                            : "../images/icons/Usuario.png";
-
-                    ?>
-
-                    <tr>
-
-                        <td>
-
-                            <div class="visit-person">
-
-                                <img src="<?= htmlspecialchars($imagenCobrador) ?>">
-
-                                <div>
-
-                                    <strong>
-
-                                        <?= htmlspecialchars(
-                                            $visita['NombreCobrador'] . ' ' .
-                                            $visita['ApellidoPCobrador']
-                                        ) ?>
-
-                                    </strong>
-
-                                    <br>
-
-                                    <small>
-
-                                        <?= htmlspecialchars($visita['NombreRol']) ?>
-
-                                    </small>
-
-                                </div>
-
-                            </div>
-
-                        </td>
-
-                        <td>
-
-                            <?= htmlspecialchars($visita['Observaciones']) ?>
-
-                        </td>
-
-                        <td>
-
-                            <?= date("d/m/Y", strtotime($visita['FechaVisita'])) ?>
-
-                        </td>
-
-                        <td>
-
-                            <span class="badge <?= $estadoVisita ?>">
-
-                                <?= htmlspecialchars($visita['Estatus']) ?>
-
-                            </span>
-
-                        </td>
-
-                    </tr>
-
-                <?php endforeach; ?>
-
-            </tbody>
-
-        </table>
+        </footer>
 
     </div>
 
@@ -931,6 +1145,44 @@ $stmtVis->close();
     imageModal.addEventListener('click', () => {
 
         imageModal.classList.remove('active');
+
+    });
+
+    // =========================================
+    // FILTRO EN TIEMPO REAL
+    // =========================================
+
+    const filtroReportes = document.getElementById('filtroReportes');
+
+    const reportCards = document.querySelectorAll('.report-card');
+
+    filtroReportes.addEventListener('change', function(){
+
+        const valor = this.value;
+
+        reportCards.forEach(card => {
+
+            const estado = card.dataset.estado;
+
+            if(valor === 'todos'){
+
+                card.style.display = 'block';
+
+            }else{
+
+                if(estado === valor){
+
+                    card.style.display = 'block';
+
+                }else{
+
+                    card.style.display = 'none';
+
+                }
+
+            }
+
+        });
 
     });
 

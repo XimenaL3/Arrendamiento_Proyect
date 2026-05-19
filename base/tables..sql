@@ -411,37 +411,6 @@ CREATE TABLE Mantenimiento_Detalle(
 );
 
 -- =========================================
--- TABLA: EVIDENCIAS LEGALES
--- =========================================
-
-CREATE TABLE Evidencias_Legales(
-    idEvidencia INT AUTO_INCREMENT PRIMARY KEY,
-
-    idPropiedad INT NOT NULL,
-
-    idInquilino INT NULL,
-
-    DescripcionDano TEXT NOT NULL,
-
-    Fotografia VARCHAR(255),
-
-    FechaRegistro DATETIME
-    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    EsCasoLegal BOOLEAN DEFAULT FALSE,
-
-    FOREIGN KEY (idPropiedad)
-        REFERENCES Propiedades(idPropiedad)
-        ON DELETE CASCADE
-        ON UPDATE CASCADE,
-
-    FOREIGN KEY (idInquilino)
-        REFERENCES Inquilinos(idInquilino)
-        ON DELETE SET NULL
-        ON UPDATE CASCADE
-);
-
--- =========================================
 -- TABLA: VISITAS COBRANZA
 -- =========================================
 
@@ -561,4 +530,20 @@ CREATE TABLE Notificaciones(
         REFERENCES Usuarios(idUsuario)
         ON DELETE CASCADE
         ON UPDATE CASCADE
+);
+
+ALTER TABLE Mantenimiento_Detalle
+ADD COLUMN idReporte INT NOT NULL,
+ADD CONSTRAINT fk_mantenimiento_reporte
+FOREIGN KEY (idReporte)
+REFERENCES Reportes(idReporte)
+ON DELETE RESTRICT
+ON UPDATE CASCADE;
+
+CREATE TABLE Reporte_Productos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    idReporte INT,
+    idProducto INT,
+    cantidad INT,
+    fechaAsignacion DATETIME DEFAULT CURRENT_TIMESTAMP
 );

@@ -1,1483 +1,1502 @@
+<?php
+
+ob_start();
+session_start();
+
+/* =========================================
+VALIDAR SESIÓN
+========================================= */
+
+if (
+    !isset($_SESSION['idUsuario']) ||
+    ($_SESSION['rol'] ?? 0) != 3
+) {
+
+    header("Location: Login.php");
+    exit();
+
+}
+
+$idUsuario = $_SESSION['idUsuario'];
+$idPersona = $_SESSION['idPersona'];
+
+require_once "../../includes/Conexion.php";
+
+if (!$conn) {
+
+    die("Error de conexión a la base de datos");
+
+}
+
+/* =========================================
+USUARIO LOGUEADO
+========================================= */
+
+$stmt = $conn->prepare("
+    SELECT 
+        p.Nombre,
+        p.ApellidoP,
+        p.ApellidoM,
+        p.Imagen,
+        r.NombreRol
+    FROM Usuarios u
+    INNER JOIN Personas p
+        ON p.idPersona = u.idPersona
+    INNER JOIN Roles r
+        ON r.idRol = u.idRol
+    WHERE u.idUsuario = ?
+");
+
+$stmt->bind_param("i", $idUsuario);
+$stmt->execute();
+
+$stmt->bind_result(
+    $nombre,
+    $apellidoP,
+    $apellidoM,
+    $imagen,
+    $rol
+);
+
+$stmt->fetch();
+$stmt->close();
+
+$nombreCompleto = trim(
+    ($nombre ?? '') . ' ' .
+    ($apellidoP ?? '') . ' ' .
+    ($apellidoM ?? '')
+);
+
+$imagenUsuario = (!empty($imagen))
+    ? "../images/person/" . $imagen
+    : "../images/icons/Usuario.png";
+
+/* =========================================
+FILTROS
+========================================= */
+
+$filtroFecha = $_GET['fecha'] ?? '';
+$filtroPrioridad = $_GET['prioridad'] ?? '';
+
+$where = "WHERE Estado = 'Pendiente'";
+
+if (!empty($filtroFecha)) {
+
+    $where .= " AND DATE(FechaRegistro) = '$filtroFecha'";
+
+}
+
+if (!empty($filtroPrioridad)) {
+
+    $where .= " AND Prioridad = '$filtroPrioridad'";
+
+}
+
+/* =========================================
+REPORTES
+========================================= */
+
+$sqlReportes = "
+SELECT *
+FROM vw_Reportes
+$where
+ORDER BY FechaRegistro DESC
+";
+
+$resultReportes = $conn->query($sqlReportes);
+
+/* =========================================
+PRODUCTOS
+========================================= */
+
+$sqlProductos = "
+SELECT *
+FROM vw_Productos
+ORDER BY NombreProducto ASC
+";
+
+$resultProductos = $conn->query($sqlProductos);
+
+/* =========================================
+INQUILINOS URGENTES
+========================================= */
+
+$sqlUrgentes = "
+SELECT 
+    NombreUsuario,
+    ApellidoP,
+    ApellidoM,
+    ImagenUsuario,
+    Titulo,
+    Prioridad
+FROM vw_Reportes
+WHERE Estado = 'Pendiente'
+" . (!empty($filtroPrioridad)
+    ? " AND Prioridad = '$filtroPrioridad'"
+    : " AND Prioridad = 'Alta'") . "
+ORDER BY FechaRegistro DESC
+";
+
+$resultUrgentes = $conn->query($sqlUrgentes);
+
+/* =========================================
+ATENDER REPORTE
+========================================= */
+
+if(isset($_POST['atenderReporte'])){
+
+    $idReporte = intval($_POST['idReporte']);
+
+    if(
+        isset($_POST['productos']) &&
+        is_array($_POST['productos'])
+    ){
+
+        foreach($_POST['productos'] as $producto){
+
+            $idProducto = intval($producto['id']);
+            $cantidad = intval($producto['cantidad']);
+
+            $stmtDescontar = $conn->prepare("
+                CALL sp_DescontarProductoBodega(?, ?)
+            ");
+
+            if($stmtDescontar){
+
+                $stmtDescontar->bind_param(
+                    "ii",
+                    $idProducto,
+                    $cantidad
+                );
+
+                $stmtDescontar->execute();
+                $stmtDescontar->close();
+
+                while(
+                    $conn->more_results() &&
+                    $conn->next_result()
+                ){}
+
+            }
+
+        }
+
+    }
+
+    if(
+        isset($_POST['productos']) &&
+        is_array($_POST['productos'])
+    ){
+
+        foreach($_POST['productos'] as $producto){
+
+            $idProducto = intval($producto['id']);
+            $cantidad = intval($producto['cantidad']);
+
+            $stmtGuardar = $conn->prepare("
+                INSERT INTO Reporte_Productos
+                (
+                    idReporte,
+                    idProducto,
+                    cantidad
+                )
+                VALUES (?, ?, ?)
+            ");
+
+            $stmtGuardar->bind_param(
+                "iii",
+                $idReporte,
+                $idProducto,
+                $cantidad
+            );
+
+            $stmtGuardar->execute();
+            $stmtGuardar->close();
+
+        }
+
+    }
+
+    $stmtReporte = $conn->prepare("
+        UPDATE Reportes
+        SET Estado = 'En proceso'
+        WHERE idReporte = ?
+    ");
+
+    $stmtReporte->bind_param(
+        "i",
+        $idReporte
+    );
+
+    $stmtReporte->execute();
+    $stmtReporte->close();
+
+    header(
+        "Location: Interface_Atender_Reporte.php?idReporte=" .
+        $idReporte
+    );
+
+    exit();
+
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="es">
 
 <head>
 
-    <meta charset="UTF-8">
-
-    <meta 
-        name="viewport" 
-        content="width=device-width, initial-scale=1.0"
-    >
-
-    <title>
-        Solicitud de Productos | Mantenimiento
-    </title>
-
-    <!-- CSS -->
-    <link rel="stylesheet" href="../css/style.css">
-
-    <style>
-
-        /* =========================================
-        EXTRA CSS PRODUCTOS MANTENIMIENTO
-        ========================================= */
-
-        .product-status{
-
-            display: inline-flex;
-
-            align-items: center;
-
-            justify-content: center;
-
-            padding: 8px 14px;
-
-            border-radius: 30px;
-
-            font-size: 12px;
-
-            font-weight: 700;
-
-            margin-top: 12px;
-
-        }
-
-        .available{
-
-            background: #dcfce7;
-
-            color: #166534;
-
-        }
-
-        .low-stock{
-
-            background: #fef3c7;
-
-            color: #92400e;
-
-        }
-
-        .out-stock{
-
-            background: #fee2e2;
-
-            color: #991b1b;
-
-        }
-
-        .card-footer{
-
-            justify-content: space-between;
-
-            align-items: center;
-
-        }
-
-        .product-quantity{
-
-            display: flex;
-
-            align-items: center;
-
-            gap: 10px;
-
-        }
-
-        .qty-btn{
-
-            width: 38px;
-
-            height: 38px;
-
-            border: none;
-
-            border-radius: 12px;
-
-            background: #f3f4f6;
-
-            cursor: pointer;
-
-            font-size: 18px;
-
-            transition: .3s ease;
-
-        }
-
-        .qty-btn:hover{
-
-            background: #e5e7eb;
-
-        }
-
-        .qty-number{
-
-            min-width: 20px;
-
-            text-align: center;
-
-            font-weight: 700;
-
-        }
-
-        .btn-add-cart{
-
-            border: none;
-
-            background: black;
-
-            color: white;
-
-            padding: 12px 18px;
-
-            border-radius: 14px;
-
-            cursor: pointer;
-
-            font-weight: 600;
-
-            transition: .3s ease;
-
-        }
-
-        .btn-add-cart:hover{
-
-            transform: translateY(-2px);
-
-        }
-
-        /* =========================================
-        TOP ACTIONS
-        ========================================= */
-
-        .top-actions{
-
-            display: flex;
-
-            align-items: center;
-
-            gap: 18px;
-
-        }
-
-        /* =========================================
-        CARRITO
-        ========================================= */
-
-        .cart-button{
-
-            position: relative;
-
-            width: 58px;
-
-            height: 58px;
-
-            border-radius: 18px;
-
-            background: white;
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: center;
-
-            cursor: pointer;
-
-            box-shadow: var(--shadow);
-
-        }
-
-        .cart-icon{
-
-            width: 24px;
-
-            height: 24px;
-
-        }
-
-        .cart-badge{
-
-            position: absolute;
-
-            top: -4px;
-
-            right: -4px;
-
-            width: 22px;
-
-            height: 22px;
-
-            border-radius: 50%;
-
-            background: black;
-
-            color: white;
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: center;
-
-            font-size: 11px;
-
-            font-weight: 700;
-
-        }
-
-        /* =========================================
-        MODAL CARRITO
-        ========================================= */
-
-        .cart-modal{
-
-            position: fixed;
-
-            top: 50%;
-
-            left: 50%;
-
-            transform: translate(-50%, -50%) scale(.9);
-
-            width: 700px;
-
-            max-width: 95%;
-
-            background: white;
-
-            border-radius: 28px;
-
-            padding: 28px;
-
-            z-index: 100;
-
-            opacity: 0;
-
-            visibility: hidden;
-
-            transition: .3s ease;
-
-            box-shadow: 0 25px 60px rgba(0,0,0,.25);
-
-        }
-
-        .cart-modal.active{
-
-            opacity: 1;
-
-            visibility: visible;
-
-            transform: translate(-50%, -50%) scale(1);
-
-        }
-
-        .cart-header{
-
-            display: flex;
-
-            justify-content: space-between;
-
-            align-items: center;
-
-            margin-bottom: 25px;
-
-        }
-
-        .cart-header h2{
-
-            font-size: 28px;
-
-        }
-
-        .cart-products{
-
-            display: flex;
-
-            flex-direction: column;
-
-            gap: 18px;
-
-            max-height: 300px;
-
-            overflow-y: auto;
-
-            margin-bottom: 25px;
-
-        }
-
-        .cart-item{
-
-            display: flex;
-
-            justify-content: space-between;
-
-            align-items: center;
-
-            padding: 18px;
-
-            border-radius: 18px;
-
-            background: #f9fafb;
-
-            border: 1px solid var(--border);
-
-        }
-
-        .cart-item-info{
-
-            display: flex;
-
-            align-items: center;
-
-            gap: 15px;
-
-        }
-
-        .cart-item-info img{
-
-            width: 60px;
-
-            height: 60px;
-
-            border-radius: 16px;
-
-            object-fit: cover;
-
-        }
-
-        .cart-item-info h4{
-
-            font-size: 16px;
-
-            margin-bottom: 4px;
-
-        }
-
-        .cart-item-info p{
-
-            color: var(--text-muted);
-
-            font-size: 13px;
-
-        }
-
-        .cart-qty{
-
-            font-weight: 700;
-
-            font-size: 15px;
-
-        }
-
-        /* =========================================
-        FORMULARIO SOLICITUD
-        ========================================= */
-
-        .request-form{
-
-            display: grid;
-
-            grid-template-columns: repeat(2,1fr);
-
-            gap: 20px;
-
-            margin-bottom: 25px;
-
-        }
-
-        .request-group{
-
-            display: flex;
-
-            flex-direction: column;
-
-            gap: 8px;
-
-        }
-
-        .request-group label{
-
-            font-size: 13px;
-
-            color: var(--text-muted);
-
-        }
-
-        .request-group input,
-        .request-group select,
-        .request-group textarea{
-
-            border: 1px solid var(--border);
-
-            background: #fafafa;
-
-            border-radius: 14px;
-
-            padding: 14px 16px;
-
-            outline: none;
-
-            resize: none;
-
-        }
-
-        .request-group.full{
-
-            grid-column: span 2;
-
-        }
-
-        .cart-footer{
-
-            display: flex;
-
-            justify-content: flex-end;
-
-            gap: 14px;
-
-        }
-
-        .btn-cart{
-
-            border: none;
-
-            padding: 14px 20px;
-
-            border-radius: 14px;
-
-            cursor: pointer;
-
-            font-weight: 600;
-
-            transition: .3s ease;
-
-        }
-
-        .btn-cancel{
-
-            background: #f3f4f6;
-
-            color: black;
-
-        }
-
-        .btn-confirm{
-
-            background: black;
-
-            color: white;
-
-        }
-
-        .btn-cart:hover{
-
-            transform: translateY(-2px);
-
-        }
-
-        /* =========================================
-        NOTIFICACIONES
-        ========================================= */
-
-        .notifications-modal{
-
-            position: fixed;
-
-            top: 50%;
-
-            left: 50%;
-
-            transform: translate(-50%, -50%) scale(.9);
-
-            width: 420px;
-
-            max-width: 90%;
-
-            background: white;
-
-            border-radius: 26px;
-
-            padding: 24px;
-
-            box-shadow: 0 25px 60px rgba(0,0,0,.25);
-
-            z-index: 100;
-
-            opacity: 0;
-
-            visibility: hidden;
-
-            transition: .3s ease;
-
-        }
-
-        .notifications-modal.active{
-
-            opacity: 1;
-
-            visibility: visible;
-
-            transform: translate(-50%, -50%) scale(1);
-
-        }
-
-        .modal-header{
-
-            display: flex;
-
-            justify-content: space-between;
-
-            align-items: center;
-
-            margin-bottom: 25px;
-
-        }
-
-        .modal-header h2{
-
-            font-size: 22px;
-
-            color: #111111;
-
-        }
-
-        .close-modal{
-
-            width: 40px;
-
-            height: 40px;
-
-            border: none;
-
-            border-radius: 12px;
-
-            background: #f3f4f6;
-
-            cursor: pointer;
-
-            font-size: 18px;
-
-            transition: .3s ease;
-
-        }
-
-        .close-modal:hover{
-
-            background: #e5e7eb;
-
-        }
-
-        .notification-list{
-
-            display: flex;
-
-            flex-direction: column;
-
-            gap: 16px;
-
-            max-height: 450px;
-
-            overflow-y: auto;
-
-        }
-
-        .notification-item{
-
-            display: flex;
-
-            justify-content: space-between;
-
-            align-items: flex-start;
-
-            gap: 15px;
-
-            padding: 18px;
-
-            border-radius: 18px;
-
-            background: #f9fafb;
-
-            border: 1px solid #ececec;
-
-            transition: .3s ease;
-
-        }
-
-        .notification-item:hover{
-
-            transform: translateY(-2px);
-
-        }
-
-        .notification-info h4{
-
-            font-size: 15px;
-
-            margin-bottom: 6px;
-
-            color: #111111;
-
-        }
-
-        .notification-info p{
-
-            font-size: 13px;
-
-            color: #7a7a7a;
-
-            line-height: 1.5;
-
-        }
-
-        .notification-info span{
-
-            display: block;
-
-            margin-top: 10px;
-
-            font-size: 12px;
-
-            color: #9ca3af;
-
-        }
-
-        .btn-check{
-
-            min-width: 45px;
-
-            height: 45px;
-
-            border: none;
-
-            border-radius: 14px;
-
-            background: black;
-
-            color: white;
-
-            font-size: 18px;
-
-            cursor: pointer;
-
-            transition: .3s ease;
-
-        }
-
-        .btn-check:hover{
-
-            transform: scale(1.05);
-
-        }
-
-        .notification-item.completed{
-
-            opacity: .6;
-
-            background: #f3f4f6;
-
-        }
-
-        .notification-item.completed .btn-check{
-
-            background: #10b981;
-
-        }
-
-        @media (max-width: 768px){
-
-            .request-form{
-
-                grid-template-columns: 1fr;
-
-            }
-
-            .request-group.full{
-
-                grid-column: span 1;
-
-            }
-
-        }
-
-    </style>
+<meta charset="UTF-8">
+
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>
+    Dashboard Reportes
+</title>
+
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
+<style>
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:Arial, Helvetica, sans-serif;
+}
+
+body{
+    background:#f4f4f4;
+    color:#111;
+}
+
+/* =========================================
+LAYOUT
+========================================= */
+
+.dashboard{
+    display:grid;
+    grid-template-columns: 320px 1fr;
+    gap:15px;
+    min-height:100vh;
+}
+
+/* =========================================
+PANEL IZQUIERDO
+========================================= */
+
+.main-panel{
+    width:100%;
+    padding:25px 25px 25px 5px;
+}
+
+/* =========================================
+TOPBAR
+========================================= */
+
+.topbar{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:30px;
+    margin-bottom:45px;
+}
+
+.topbar-left{
+    flex:1;
+}
+
+.subtitle{
+    color:#6b7280;
+    font-size:15px;
+}
+
+.user-box{
+    background:white;
+    padding:14px 22px;
+    border-radius:24px;
+    display:flex;
+    align-items:center;
+    gap:15px;
+    box-shadow:0 12px 30px rgba(0,0,0,.08);
+    min-width:300px;
+    margin-left:auto;
+}
+
+.user-avatar{
+    width:60px;
+    height:60px;
+    border-radius:50%;
+    object-fit:cover;
+}
+
+.user-info{
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+}
+
+.user-info small{
+    color:#6b7280;
+    margin-bottom:4px;
+}
+
+.user-info strong{
+    font-size:15px;
+}
+
+.user-box img{
+    width:60px;
+    height:60px;
+    border-radius:50%;
+    object-fit:cover;
+}
+
+.user-box small{
+    color:#6b7280;
+    display:block;
+    margin-bottom:4px;
+}
+
+.user-box strong{
+    font-size:15px;
+}
+
+/* =========================================
+REPORTES
+========================================= */
+
+.reports-container{
+    display:flex;
+    flex-direction:column;
+    gap:28px;
+    margin-bottom:60px;
+}
+
+.report-card{
+    background:white;
+    border-radius:34px;
+    padding:24px;
+    display:flex;
+    align-items:center;
+    gap:24px;
+    box-shadow:0 15px 40px rgba(0,0,0,.08);
+    transition:.3s ease;
+}
+
+.report-card:hover{
+    transform:translateY(-4px);
+}
+
+.report-image{
+    width:240px;
+    height:190px;
+    border-radius:28px;
+    object-fit:cover;
+    background:#e5e7eb;
+}
+
+.report-info{
+    flex:1;
+}
+
+.report-info h2{
+    font-size:30px;
+    margin-bottom:12px;
+    color:#111;
+}
+
+.report-info p{
+    color:#4b5563;
+    line-height:1.7;
+    margin-bottom:10px;
+}
+
+.report-footer{
+    margin-top:20px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+/* =========================================
+STATUS
+========================================= */
+
+.status{
+    padding:10px 18px;
+    border-radius:30px;
+    font-size:13px;
+    font-weight:bold;
+}
+
+.Pendiente{
+    background:#e5e7eb;
+    color:#111;
+}
+
+.Alta{
+    color:#111;
+    font-weight:bold;
+}
+
+.Media{
+    color:#525252;
+    font-weight:bold;
+}
+
+.Baja{
+    color:#9ca3af;
+    font-weight:bold;
+}
+
+/* =========================================
+BOTONES
+========================================= */
+
+.btn-attend{
+    border:none;
+    background:#111;
+    color:white;
+    padding:15px 24px;
+    border-radius:16px;
+    font-weight:bold;
+    cursor:pointer;
+    transition:.3s ease;
+}
+
+.btn-attend:hover{
+    transform:translateY(-2px);
+    background:#000;
+}
+
+/* =========================================
+SIDEBAR
+========================================= */
+
+.sidebar{
+    background:#111111;
+    min-height:100vh;
+    padding:35px 25px;
+    display:flex;
+    flex-direction:column;
+    gap:28px;
+    position:sticky;
+    top:0;
+    overflow:visible;
+}
+
+/* =========================================
+PANELES NEGROS
+========================================= */
+
+.dark-panel{
+    background:transparent;
+    color:white;
+    padding:0;
+    border-radius:0;
+    box-shadow:none;
+}
+
+.dark-panel h2{
+    font-size:28px;
+    margin-bottom:22px;
+}
+
+/* =========================================
+FILTRO PRIORIDAD
+========================================= */
+
+.priority-filter{
+    margin-bottom:25px;
+}
+
+.priority-filter select{
+    width:100%;
+    border:none;
+    outline:none;
+    background:#1f1f1f;
+    color:white;
+    padding:15px;
+    border-radius:18px;
+    font-size:15px;
+}
+
+/* =========================================
+INQUILINOS
+========================================= */
+
+.user-alert{
+    display:flex;
+    align-items:center;
+    gap:15px;
+    margin-bottom:22px;
+    padding-bottom:18px;
+    border-bottom:1px solid rgba(255,255,255,.08);
+}
+
+.user-alert:last-child{
+    border-bottom:none;
+    margin-bottom:0;
+}
+
+.user-alert img{
+    width:58px;
+    height:58px;
+    border-radius:50%;
+    object-fit:cover;
+}
+
+.user-alert strong{
+    display:block;
+    margin-bottom:6px;
+}
+
+.user-alert small{
+    color:#d1d5db;
+}
+
+/* =========================================
+MODAL
+========================================= */
+
+.overlay{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.55);
+    opacity:0;
+    visibility:hidden;
+    transition:.3s;
+    z-index:100;
+}
+
+.overlay.active{
+    opacity:1;
+    visibility:visible;
+}
+
+.modal{
+    position:fixed;
+    top:50%;
+    left:50%;
+    transform:translate(-50%,-50%) scale(.9);
+    width:1200px;
+    max-width:95%;
+    background:white;
+    border-radius:35px;
+    padding:35px;
+    z-index:101;
+    opacity:0;
+    visibility:hidden;
+    transition:.3s;
+    max-height:90vh;
+    overflow-y:auto;
+}
+
+.modal.active{
+    opacity:1;
+    visibility:visible;
+    transform:translate(-50%,-50%) scale(1);
+}
+
+.modal-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:30px;
+}
+
+.close-modal{
+    width:45px;
+    height:45px;
+    border:none;
+    border-radius:12px;
+    background:#f3f4f6;
+    cursor:pointer;
+}
+
+/* =========================================
+PRODUCTOS
+========================================= */
+
+.products-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:20px;
+}
+
+.product-card{
+    background:#fafafa;
+    border-radius:24px;
+    overflow:hidden;
+    border:1px solid #ececec;
+}
+
+.product-image{
+    width:100%;
+    height:180px;
+    object-fit:cover;
+}
+
+.product-content{
+    padding:20px;
+}
+
+.product-content h3{
+    margin-bottom:10px;
+}
+
+.qty-control{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-top:18px;
+}
+
+.qty-btn{
+    width:35px;
+    height:35px;
+    border:none;
+    border-radius:10px;
+    cursor:pointer;
+    background:#e5e7eb;
+}
+
+.btn-add{
+    width:100%;
+    margin-top:18px;
+    border:none;
+    background:#111;
+    color:white;
+    padding:14px;
+    border-radius:14px;
+    cursor:pointer;
+}
+
+.modal-footer{
+    margin-top:35px;
+    text-align:right;
+}
+
+.btn-finish-report{
+    border:none;
+    background:#111;
+    color:white;
+    padding:18px 32px;
+    border-radius:18px;
+    cursor:pointer;
+    font-weight:bold;
+}
+
+/* =========================================
+RESPONSIVE
+========================================= */
+
+@media(max-width:1200px){
+
+    .dashboard{
+        grid-template-columns:1fr;
+    }
+
+}
+
+@media(max-width:900px){
+
+    .topbar{
+        flex-direction:column;
+        align-items:flex-start;
+        gap:20px;
+    }
+
+    .report-card{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .report-image{
+        width:100%;
+    }
+
+    .products-grid{
+        grid-template-columns:1fr;
+    }
+
+}
+
+.flatpickr-calendar{
+    background:#e5e7eb;
+    border:none;
+    border-radius:22px;
+    box-shadow:none;
+    width:100% !important;
+    padding:15px;
+}
+
+.flatpickr-months{
+    margin-bottom:10px;
+}
+
+.flatpickr-current-month{
+    font-size:18px;
+}
+
+.flatpickr-weekdays{
+    margin-bottom:8px;
+}
+
+.flatpickr-days{
+    width:100% !important;
+}
+
+.dayContainer{
+    width:100% !important;
+    min-width:100% !important;
+    max-width:100% !important;
+}
+
+.flatpickr-day{
+    border-radius:12px;
+    height:42px;
+    line-height:42px;
+}
+
+.flatpickr-day.selected{
+    background:#111;
+    border-color:#111;
+    color:white;
+}
+
+.inquilinos-scroll{
+    max-height:400px;
+    overflow-y:auto;
+    padding-right:5px;
+}
+
+.inquilinos-scroll::-webkit-scrollbar{
+    width:6px;
+}
+
+.inquilinos-scroll::-webkit-scrollbar-thumb{
+    background:#555;
+    border-radius:10px;
+}
+
+/* =========================================
+BOTON LOGOUT
+========================================= */
+
+.logout-btn{
+
+    width:58px;
+    height:58px;
+
+    background:white;
+
+    border-radius:50%;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    box-shadow:0 12px 30px rgba(0,0,0,.08);
+
+    text-decoration:none;
+
+    transition:.3s ease;
+
+}
+
+.logout-btn:hover{
+
+    transform:translateY(-3px);
+
+}
+
+.logout-btn img{
+
+    width:24px;
+    height:24px;
+    object-fit:contain;
+
+}
+
+.footer{
+    margin-top:35px;
+    text-align:center;
+    color:#6b7280;
+}
+
+</style>
 
 </head>
 
 <body>
 
-    <!-- OVERLAY -->
-    <div class="overlay" id="overlay"></div>
+<div class="overlay" id="overlay"></div>
 
-    <div class="container">
+<div class="dashboard">
 
-        <!-- SIDEBAR -->
-        <aside class="sidebar collapsed" id="sidebar">
+        <aside class="sidebar">
 
-            <!-- LOGO -->
-            <div class="brand" id="brandToggle">
+        <!-- CALENDARIO -->
+        <div class="dark-panel">
 
-                <img 
-                    src="../images/icons/Usuario.png"
-                    alt="Logo"
-                    class="brand-logo"
-                >
+            <h2>
+                Calendario
+            </h2>
 
-                <div class="brand-text">
+            <form method="GET">
 
-                    <h2>Sunlight Gardens</h2>
+                <?php if(!empty($filtroPrioridad)): ?>
 
-                    <span>Panel Mantenimiento</span>
-
-                </div>
-
-            </div>
-
-            <!-- NAV -->
-            <nav class="sidebar-nav">
-
-                <a href="Interface_Reportes_M.php">
-
-                    <img 
-                        src="../images/icons/Reportes_Claro.png"
-                        alt="Reportes"
-                        class="menu-icon"
+                    <input
+                        type="hidden"
+                        name="prioridad"
+                        value="<?= htmlspecialchars($filtroPrioridad) ?>"
                     >
 
-                    <span>Reportes</span>
+                <?php endif; ?>
 
-                </a>
+                <input
+                type="text"
+                id="calendarInput"
+                style="display:none;"
+            >
 
-                <a href="Interface_Productos_Limpieza_M.php" class="active">
+            </form>
 
-                    <img 
-                        src="../images/icons/Mantenimiento_Oscuro.png"
-                        alt="Productos"
-                        class="menu-icon"
-                    >
+        </div>
 
-                    <span>Productos Limpieza</span>
+        <!-- INQUILINOS -->
+        <div class="dark-panel">
 
-                </a>
+            <h2>
+                Inquilinos Urgentes
+            </h2>
 
-            </nav>
+            <!-- FILTRO -->
+            <div class="priority-filter">
 
-            <!-- LOGOUT -->
-            <div class="logout">
+                <form method="GET">
 
-                <a href="#">
+                    <?php if(!empty($filtroFecha)): ?>
 
-                    <img 
-                        src="../images/icons/Cerrar_Claro.png"
-                        alt="Cerrar sesión"
-                        class="menu-icon"
-                    >
-
-                    <span>Cerrar Sesión</span>
-
-                </a>
-
-            </div>
-
-        </aside>
-
-        <!-- MAIN -->
-        <main class="main-content">
-
-            <!-- TOPBAR -->
-            <header class="top-bar">
-
-                <div>
-
-                    <h1>
-                        Productos de Limpieza
-                    </h1>
-
-                    <p class="subtitle">
-                        Solicita productos para reportes y departamentos de mantenimiento.
-                    </p>
-
-                </div>
-
-                <div class="user-profile">
-
-                    <div class="top-actions">
-
-                        <!-- NOTIFICACIONES -->
-                        <div class="notification-wrapper" id="openNotifications">
-
-                            <img 
-                                src="../images/icons/Notificaciones.png"
-                                alt="Notificaciones"
-                                class="top-icon"
-                            >
-
-                            <div class="notification-badge">
-                                3
-                            </div>
-
-                        </div>
-
-                        <!-- CARRITO -->
-                        <div class="cart-button" id="openCart">
-
-                            <img 
-                                src="../images/icons/Canasta.png"
-                                alt="Carrito"
-                                class="cart-icon"
-                            >
-
-                            <div class="cart-badge">
-                                3
-                            </div>
-
-                        </div>
-
-                    </div>
-
-                    <!-- USER -->
-                    <div class="logged-user">
-
-                        <img 
-                            src="../images/icons/Usuario.png"
-                            alt="Usuario"
-                            class="avatar-admin"
+                        <input
+                            type="hidden"
+                            name="fecha"
+                            value="<?= htmlspecialchars($filtroFecha) ?>"
                         >
 
-                        <div class="user-info">
+                    <?php endif; ?>
 
-                            <small>
-                                En uso por
-                            </small>
+                    <select
+                        name="prioridad"
+                        onchange="this.form.submit()"
+                    >
+
+                        <option value="">
+                            Filtrar prioridad
+                        </option>
+
+                        <option
+                            value="Alta"
+                            <?= ($filtroPrioridad == 'Alta')
+                                ? 'selected' : '' ?>
+                        >
+                            Alta
+                        </option>
+
+                        <option
+                            value="Media"
+                            <?= ($filtroPrioridad == 'Media')
+                                ? 'selected' : '' ?>
+                        >
+                            Media
+                        </option>
+
+                        <option
+                            value="Baja"
+                            <?= ($filtroPrioridad == 'Baja')
+                                ? 'selected' : '' ?>
+                        >
+                            Baja
+                        </option>
+
+                    </select>
+
+                </form>
+
+            </div>
+
+            <div class="inquilinos-scroll">
+
+                <!-- LISTA -->
+                <?php while($urgente = $resultUrgentes->fetch_assoc()): ?>
+
+                    <div class="user-alert">
+
+                    <img 
+                        src="<?php echo !empty($urgente['ImagenUsuario']) 
+                        ? '../images/person/' . $urgente['ImagenUsuario'] 
+                        : '../images/icons/Usuario.png'; ?>"
+                    >
+
+                        <div>
 
                             <strong>
-                                Michael Torres
+
+                                <?= htmlspecialchars(
+                                    $urgente['NombreUsuario'] . ' ' .
+                                    $urgente['ApellidoP']
+                                ) ?>
+
                             </strong>
 
+                            <small>
+
+                                <?= htmlspecialchars(
+                                    $urgente['Titulo']
+                                ) ?>
+
+                            </small>
+
                         </div>
 
                     </div>
 
-                </div>
+                <?php endwhile; ?>
 
-            </header>
+            </div>  
 
-            <!-- SEARCH -->
-            <section class="search-section">
+        </div>
 
-                <div class="filters">
+    </aside>
 
-                    <div class="filter-group">
+    <div class="main-panel">
 
-                        <label>
-                            Categoría
-                        </label>
+        <!-- TOPBAR -->
+        <div class="topbar">
 
-                        <select>
+            <div class="topbar-left">
 
-                            <option>
-                                Todos los productos
-                            </option>
+                <h1>
+                    Reportes del Sistema
+                </h1>
 
-                            <option>
-                                Desinfectantes
-                            </option>
+                <p class="subtitle">
+                    Gestiona reportes de Inquilinos.
+                </p>
 
-                            <option>
-                                Jabones
-                            </option>
+            </div>
 
-                            <option>
-                                Aromatizantes
-                            </option>
+            <!-- USUARIO -->
+            <!-- CONTENEDOR USER + LOGOUT -->
+            <div style="display:flex; align-items:center; gap:15px;">
 
-                            <option>
-                                Multiusos
-                            </option>
+                <!-- BOTON LOGOUT -->
+                <a href="Login.php" class="logout-btn">
 
-                        </select>
+                    <img
+                        src="../images/icons/Cerrar_Oscuro.png"
+                        alt="Cerrar sesión"
+                    >
 
-                    </div>
+                </a>
 
-                    <div class="filter-group">
+                        <!-- USUARIO -->
+                        <div class="user-box">
 
-                        <label>
-                            Disponibilidad
-                        </label>
-
-                        <select>
-
-                            <option>
-                                Todos
-                            </option>
-
-                            <option>
-                                Disponibles
-                            </option>
-
-                            <option>
-                                Stock Bajo
-                            </option>
-
-                        </select>
-
-                    </div>
-
-                    <div class="search-input-wrapper">
-
-                        <input 
-                            type="text"
-                            placeholder="Buscar producto..."
-                        >
-
-                        <button class="btn-search">
-
-                            <img 
-                                src="../images/icons/Buscar.png"
-                                alt="Buscar"
-                                class="button-icon"
+                            <img
+                                src="<?= htmlspecialchars($imagenUsuario) ?>"
+                                alt="Usuario"
+                                class="user-avatar"
                             >
 
-                        </button>
+                            <div class="user-info">
+
+                                <small>
+                                    En uso por
+                                </small>
+
+                                <strong>
+                                    <?= htmlspecialchars($nombreCompleto) ?>
+                                </strong>
+
+                            </div>
+
+                        </div>
 
                     </div>
 
-                </div>
+                    </div>
 
-            </section>
+                    <!-- REPORTES -->
+                    <div class="reports-container">
 
-            <!-- PRODUCTS -->
-            <section class="workers-section">
+                        <?php while($reporte = $resultReportes->fetch_assoc()): ?>
 
-                <div class="section-header">
+                            <?php
 
-                    <h2>
+                            $estadoClase = str_replace(
+                                " ",
+                                "",
+                                $reporte['Estado']
+                            );
 
-                        Inventario Disponible
+                            $prioridadClase = $reporte['Prioridad'];
 
-                        <span class="badge">
-                            24
-                        </span>
+                            $evidencia = !empty($reporte['Evidencia'])
+                                ? '../images/reports/' . $reporte['Evidencia']
+                                : '../images/default/default-report.jpg';
 
-                    </h2>
+                            ?>
 
-                </div>
+                            <div class="report-card">
 
-                <div class="workers-grid">
-
-                    <!-- PRODUCTO -->
-                    <div class="worker-card">
-
-                        <div class="card-header">
-
-                            <div class="worker-meta">
-
-                                <img 
-                                    src="../images/icons/Usuario.png"
-                                    alt="Producto"
+                                <!-- IMAGEN -->
+                                <img
+                                    src="<?= htmlspecialchars($evidencia) ?>"
+                                    class="report-image"
                                 >
 
-                                <div class="worker-title">
+                                <!-- INFO -->
+                                <div class="report-info">
 
-                                    <h3>
-                                        Cloro Industrial
-                                    </h3>
+                                    <h2>
+                                        <?= htmlspecialchars($reporte['Titulo']) ?>
+                                    </h2>
 
                                     <p>
-                                        Desinfectante
+                                        <?= htmlspecialchars($reporte['Descripcion']) ?>
                                     </p>
 
-                                </div>
+                                    <p>
+
+                                        <strong>
+                                            Inquilino:
+                                        </strong>
+
+                                        <?= htmlspecialchars(
+                                            $reporte['NombreUsuario'] . ' ' .
+                                            $reporte['ApellidoP']
+                                        ) ?>
+
+                                    </p>
+
+                                    <p>
+
+                                        <strong>
+                                            Propiedad:
+                                        </strong>
+
+                                        <?= htmlspecialchars(
+                                            $reporte['NumeroIdentificador']
+                                        ) ?>
+
+                                    </p>
+
+                                    <p>
+
+                                        <strong>
+                                            Prioridad:
+                                        </strong>
+
+                                        <span class="<?= $prioridadClase ?>">
+
+                                            <?= htmlspecialchars(
+                                                $reporte['Prioridad']
+                                            ) ?>
+
+                                        </span>
+
+                                    </p>
+
+                                    <div class="report-footer">
+
+                                        <div class="status <?= $estadoClase ?>">
+
+                                            <?= htmlspecialchars(
+                                                $reporte['Estado']
+                                            ) ?>
+
+                                        </div>
+
+                                        <button
+                                            class="btn-attend openModalBtn"
+                                            data-report="<?= $reporte['idReporte'] ?>"
+                                        >
+
+                                            Atender Reporte
+
+                                        </button>
 
                             </div>
-
-                            <div class="product-status available">
-                                Disponible
-                            </div>
-
-                        </div>
-
-                        <div class="card-body">
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Cantidad.png"
-                                    alt="Cantidad"
-                                    class="info-icon"
-                                >
-
-                                Stock disponible: 25 unidades
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Informacion.png"
-                                    alt="Uso"
-                                    class="info-icon"
-                                >
-
-                                Uso para baños y áreas comunes
-
-                            </p>
-
-                            <p>
-
-                                <img 
-                                    src="../images/icons/Precio.png"
-                                    alt="Código"
-                                    class="info-icon"
-                                >
-
-                                Código: LIM-001
-
-                            </p>
-
-                        </div>
-
-                        <div class="card-footer">
-
-                            <div class="product-quantity">
-
-                                <button class="qty-btn">
-                                    -
-                                </button>
-
-                                <span class="qty-number">
-                                    1
-                                </span>
-
-                                <button class="qty-btn">
-                                    +
-                                </button>
-
-                            </div>
-
-                            <button class="btn-add-cart">
-                                Agregar
-                            </button>
 
                         </div>
 
                     </div>
 
-                </div>
+                 <?php endwhile; ?>
 
-            </section>
-
+            </div>
+            
             <!-- FOOTER -->
             <footer class="footer">
 
                 <p>
+
                     © 2026 DiamondsCorporation.
                     Todos los derechos reservados.
+
                 </p>
 
             </footer>
 
-        </main>
+        </div>
+
+</div>
+
+<!-- =========================================
+MODAL
+========================================= -->
+
+<form method="POST">
+
+<input
+    type="hidden"
+    name="idReporte"
+    id="idReporteInput"
+>
+
+<div class="modal" id="productsModal">
+
+    <div class="modal-header">
+
+        <h2>
+            Seleccionar Productos
+        </h2>
+
+        <button
+            type="button"
+            class="close-modal"
+            id="closeModal"
+        >
+            ✕
+        </button>
 
     </div>
 
-    <!-- =========================================
-    MODAL CARRITO
-    ========================================= -->
+    <div class="products-grid">
 
-    <div class="cart-modal" id="cartModal">
+        <?php while($producto = $resultProductos->fetch_assoc()): ?>
 
-        <div class="cart-header">
+            <?php
 
-            <h2>
-                Solicitud de Productos
-            </h2>
+            $imagenProducto = !empty($producto['Imagen'])
+                ? "../../" . $producto['Imagen']
+                : '../images/default/default-product.png';
 
-            <button class="close-modal" id="closeCart">
-                ✕
-            </button>
+            ?>
 
-        </div>
+            <div
+                class="product-card"
+                data-id="<?= $producto['idProducto'] ?>"
+            >
 
-        <div class="cart-products">
+                <img
+                    src="<?= htmlspecialchars($imagenProducto) ?>"
+                    class="product-image"
+                >
 
-            <div class="cart-item">
+                <div class="product-content">
 
-                <div class="cart-item-info">
+                    <h3>
+                        <?= htmlspecialchars(
+                            $producto['NombreProducto']
+                        ) ?>
+                    </h3>
 
-                    <img 
-                        src="../images/icons/Usuario.png"
-                        alt="Producto"
-                    >
+                    <p>
+                        <?= htmlspecialchars(
+                            $producto['Descripcion']
+                        ) ?>
+                    </p>
 
-                    <div>
+                    <p>
 
-                        <h4>
-                            Cloro Industrial
-                        </h4>
+                        <strong>
+                            Stock:
+                        </strong>
 
-                        <p>
-                            Desinfectante
-                        </p>
+                        <?= $producto['CantidadDisponible'] ?>
+
+                    </p>
+
+                    <div class="qty-control">
+
+                        <button
+                            type="button"
+                            class="qty-btn minus"
+                        >
+                            -
+                        </button>
+
+                        <span class="qty-number">
+                            1
+                        </span>
+
+                        <button
+                            type="button"
+                            class="qty-btn plus"
+                        >
+                            +
+                        </button>
 
                     </div>
 
+                    <button
+                        type="button"
+                        class="btn-add"
+                    >
+
+                        Agregar Producto
+
+                    </button>
+
                 </div>
 
-                <div class="cart-qty">
-                    x2
-                </div>
-
             </div>
 
-        </div>
-
-        <!-- FORM -->
-        <div class="request-form">
-
-            <div class="request-group">
-
-                <label>
-                    Tipo de Solicitud
-                </label>
-
-                <select>
-
-                    <option>
-                        Seleccionar
-                    </option>
-
-                    <option>
-                        Reporte de Mantenimiento
-                    </option>
-
-                    <option>
-                        Departamento
-                    </option>
-
-                </select>
-
-            </div>
-
-            <div class="request-group">
-
-                <label>
-                    Número de Reporte
-                </label>
-
-                <input 
-                    type="text"
-                    placeholder="Ej. REP-204"
-                >
-
-            </div>
-
-            <div class="request-group full">
-
-                <label>
-                    Departamento / Área
-                </label>
-
-                <select>
-
-                    <option>
-                        Seleccionar departamento
-                    </option>
-
-                    <option>
-                        Jardinería
-                    </option>
-
-                    <option>
-                        Limpieza General
-                    </option>
-
-                    <option>
-                        Área Administrativa
-                    </option>
-
-                </select>
-
-            </div>
-
-            <div class="request-group full">
-
-                <label>
-                    Motivo de la Solicitud
-                </label>
-
-                <textarea 
-                    rows="4"
-                    placeholder="Describe para qué serán utilizados los productos..."
-                ></textarea>
-
-            </div>
-
-        </div>
-
-        <div class="cart-footer">
-
-            <button class="btn-cart btn-cancel" id="cancelCart">
-                Cancelar
-            </button>
-
-            <button class="btn-cart btn-confirm">
-                Confirmar Solicitud
-            </button>
-
-        </div>
+        <?php endwhile; ?>
 
     </div>
 
-    <!-- =========================================
-    MODAL NOTIFICACIONES
-    ========================================= -->
+    <div class="modal-footer">
 
-    <div class="notifications-modal" id="notificationsModal">
+        <button
+            type="submit"
+            name="atenderReporte"
+            class="btn-finish-report"
+        >
 
-        <div class="modal-header">
+            Atender Reporte
 
-            <h2>
-                Notificaciones
-            </h2>
-
-            <button class="close-modal" id="closeNotifications">
-                ✕
-            </button>
-
-        </div>
-
-        <div class="notification-list">
-
-            <div class="notification-item">
-
-                <div class="notification-info">
-
-                    <h4>
-                        Solicitud aprobada
-                    </h4>
-
-                    <p>
-                        La solicitud REP-204 fue aprobada correctamente.
-                    </p>
-
-                    <span>
-                        Hace 5 minutos
-                    </span>
-
-                </div>
-
-                <button class="btn-check">
-                    ✓
-                </button>
-
-            </div>
-
-            <div class="notification-item">
-
-                <div class="notification-info">
-
-                    <h4>
-                        Stock Bajo
-                    </h4>
-
-                    <p>
-                        El producto Limpiador Multiusos tiene pocas existencias.
-                    </p>
-
-                    <span>
-                        Hace 15 minutos
-                    </span>
-
-                </div>
-
-                <button class="btn-check">
-                    ✓
-                </button>
-
-            </div>
-
-            <div class="notification-item">
-
-                <div class="notification-info">
-
-                    <h4>
-                        Nuevo producto agregado
-                    </h4>
-
-                    <p>
-                        Se agregó nuevo inventario al almacén de limpieza.
-                    </p>
-
-                    <span>
-                        Hace 1 hora
-                    </span>
-
-                </div>
-
-                <button class="btn-check">
-                    ✓
-                </button>
-
-            </div>
-
-        </div>
+        </button>
 
     </div>
 
-    <!-- SCRIPT -->
-    <script>
+</div>
 
-        const sidebar = document.getElementById('sidebar');
+</form>
 
-        const brandToggle = document.getElementById('brandToggle');
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 
-        const overlay = document.getElementById('overlay');
+<script>
 
-        /* =========================================
-        CARRITO
-        ========================================= */
+flatpickr("#calendarInput", {
 
-        const cartModal = document.getElementById('cartModal');
+    inline: true,
+    dateFormat: "Y-m-d",
+    defaultDate:
+    "<?= !empty($filtroFecha)
+        ? $filtroFecha
+        : date('Y-m-d') ?>",
 
-        const openCart = document.getElementById('openCart');
+    onChange: function(selectedDates, dateStr){
 
-        const closeCart = document.getElementById('closeCart');
+        window.location.href =
+            "?fecha=" + dateStr;
 
-        const cancelCart = document.getElementById('cancelCart');
+    }
 
-        /* =========================================
-        NOTIFICACIONES
-        ========================================= */
+});
 
-        const notificationsModal = document.getElementById('notificationsModal');
+/* =========================================
+MODAL
+========================================= */
 
-        const openNotifications = document.getElementById('openNotifications');
+const overlay =
+    document.getElementById('overlay');
 
-        const closeNotifications = document.getElementById('closeNotifications');
+const modal =
+    document.getElementById('productsModal');
 
-        const checkButtons = document.querySelectorAll('.btn-check');
+const closeModal =
+    document.getElementById('closeModal');
 
-        /* =========================================
-        SIDEBAR
-        ========================================= */
+const openButtons =
+    document.querySelectorAll('.openModalBtn');
 
-        function toggleSidebar(){
+const idReporteInput =
+    document.getElementById('idReporteInput');
 
-            sidebar.classList.toggle('collapsed');
+openButtons.forEach(button => {
 
-            overlay.classList.toggle('active');
+    button.addEventListener('click', () => {
 
-        }
+        idReporteInput.value =
+            button.dataset.report;
 
-        brandToggle.addEventListener('click', toggleSidebar);
+        modal.classList.add('active');
 
-        /* =========================================
-        ABRIR CARRITO
-        ========================================= */
+        overlay.classList.add('active');
 
-        openCart.addEventListener('click', () => {
+    });
 
-            closeAllModals();
+});
 
-            cartModal.classList.add('active');
+function closeAll(){
 
-            overlay.classList.add('active');
+    modal.classList.remove('active');
 
-        });
+    overlay.classList.remove('active');
 
-        /* =========================================
-        CERRAR CARRITO
-        ========================================= */
+}
 
-        closeCart.addEventListener('click', closeCartModal);
+closeModal.addEventListener(
+    'click',
+    closeAll
+);
 
-        cancelCart.addEventListener('click', closeCartModal);
+overlay.addEventListener(
+    'click',
+    closeAll
+);
 
-        function closeCartModal(){
+/* =========================================
+PRODUCTOS
+========================================= */
 
-            cartModal.classList.remove('active');
+const productosSeleccionados = [];
 
-            overlay.classList.remove('active');
+/* BOTONES + Y - */
 
-        }
+document.querySelectorAll('.product-card').forEach(card => {
 
-        /* =========================================
-        ABRIR NOTIFICACIONES
-        ========================================= */
+    const minusBtn = card.querySelector('.minus');
+    const plusBtn = card.querySelector('.plus');
+    const qtyNumber = card.querySelector('.qty-number');
+    const addBtn = card.querySelector('.btn-add');
 
-        openNotifications.addEventListener('click', () => {
+    let cantidad = 1;
 
-            closeAllModals();
+    /* SUMAR */
 
-            notificationsModal.classList.add('active');
+    plusBtn.addEventListener('click', () => {
 
-            overlay.classList.add('active');
+        cantidad++;
 
-        });
+        qtyNumber.textContent = cantidad;
 
-        /* =========================================
-        CERRAR NOTIFICACIONES
-        ========================================= */
+    });
 
-        closeNotifications.addEventListener('click', closeNotificationsModal);
+    /* RESTAR */
 
-        function closeNotificationsModal(){
+    minusBtn.addEventListener('click', () => {
 
-            notificationsModal.classList.remove('active');
+        if(cantidad > 1){
 
-            overlay.classList.remove('active');
+            cantidad--;
 
-        }
-
-        /* =========================================
-        OVERLAY
-        ========================================= */
-
-        overlay.addEventListener('click', () => {
-
-            overlay.classList.remove('active');
-
-            cartModal.classList.remove('active');
-
-            notificationsModal.classList.remove('active');
-
-            sidebar.classList.remove('collapsed');
-
-        });
-
-        /* =========================================
-        CERRAR TODO
-        ========================================= */
-
-        function closeAllModals(){
-
-            cartModal.classList.remove('active');
-
-            notificationsModal.classList.remove('active');
+            qtyNumber.textContent = cantidad;
 
         }
 
-        /* =========================================
-        MARCAR NOTIFICACION
-        ========================================= */
+    });
 
-        checkButtons.forEach(button => {
+    /* AGREGAR PRODUCTO */
 
-            button.addEventListener('click', () => {
+    addBtn.addEventListener('click', () => {
 
-                const notification = button.parentElement;
+        const idProducto = card.dataset.id;
 
-                notification.classList.add('completed');
+        const existente = productosSeleccionados.find(
+            producto => producto.id == idProducto
+        );
 
-                button.innerHTML = '✓';
+        /* SI YA EXISTE -> SUMAR */
+
+        if(existente){
+
+            existente.cantidad += cantidad;
+
+        }else{
+
+            productosSeleccionados.push({
+
+                id: idProducto,
+                cantidad: cantidad
 
             });
 
-        });
+        }
 
-    </script>
+        addBtn.textContent = "Producto Agregado ✓";
+
+        setTimeout(() => {
+
+            addBtn.textContent = "Agregar Producto";
+
+        }, 1200);
+
+    });
+
+});
+
+/* =========================================
+ENVIAR PRODUCTOS AL FORMULARIO
+========================================= */
+
+document.querySelector('form').addEventListener('submit', function(e){
+
+    /* LIMPIAR INPUTS ANTERIORES */
+
+    document.querySelectorAll('.producto-hidden').forEach(input => {
+
+        input.remove();
+
+    });
+
+    /* CREAR INPUTS */
+
+    productosSeleccionados.forEach((producto, index) => {
+
+        const inputId = document.createElement('input');
+
+        inputId.type = 'hidden';
+        inputId.name =
+            `productos[${index}][id]`;
+
+        inputId.value = producto.id;
+
+        inputId.classList.add('producto-hidden');
+
+        this.appendChild(inputId);
+
+        const inputCantidad = document.createElement('input');
+
+        inputCantidad.type = 'hidden';
+
+        inputCantidad.name =
+            `productos[${index}][cantidad]`;
+
+        inputCantidad.value = producto.cantidad;
+
+        inputCantidad.classList.add('producto-hidden');
+
+        this.appendChild(inputCantidad);
+
+    });
+
+});
+
+</script>
 
 </body>
 

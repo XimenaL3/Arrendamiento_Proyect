@@ -96,7 +96,7 @@ $resultado = $conn->query($sql);
 $reportes = [];
 $totalReportes = 0;
 $pendientes = 0;
-$atendidos = 0;
+$Finalizado = 0;
 $cancelados = 0;
 
 if ($resultado && $resultado->num_rows > 0) {
@@ -110,8 +110,8 @@ if ($resultado && $resultado->num_rows > 0) {
             case 'Pendiente':
                 $pendientes++;
                 break;
-            case 'Atendido':
-                $atendidos++;
+            case 'Finalizado':
+                $Finalizado++;
                 break;
             case 'Cancelado':
                 $cancelados++;
@@ -853,7 +853,8 @@ if ($resultado && $resultado->num_rows > 0) {
             <select id="estadoFiltro">
                 <option value="">Todos</option>
                 <option value="Pendiente">Pendientes</option>
-                <option value="Atendido">Atendidos</option>
+                <option value="En proceso">En proceso</option>
+                <option value="Finalizado">Finalizado</option>
                 <option value="Cancelado">Cancelados</option>
             </select>
         </div>
@@ -886,8 +887,8 @@ if ($resultado && $resultado->num_rows > 0) {
     </div>
 
     <div class="stat-card">
-        <h3>Atendidos</h3>
-        <strong><?php echo $atendidos; ?></strong>
+        <h3>Finalizados</h3>
+        <strong><?php echo $Finalizado; ?></strong>
     </div>
 
     <div class="stat-card">

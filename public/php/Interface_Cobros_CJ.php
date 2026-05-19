@@ -80,9 +80,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $accion = $_POST['accion'] ?? '';
 
-    /* =========================
-       ABONO (NO TOCADO)
-    ========================= */
     if ($accion === "solicitar_abono") {
 
         $idContrato = (int)($_POST['idContratoAbono'] ?? 0);
@@ -147,85 +144,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     elseif ($accion === "registrar_reporte") {
 
-    try {
+        try {
 
-        $idInquilino = (int)($_POST['idInquilino'] ?? 0);
-        $idPropiedad = (int)($_POST['idPropiedad'] ?? 0);
+            $idInquilino = (int)($_POST['idInquilino'] ?? 0);
+            $idPropiedad = (int)($_POST['idPropiedad'] ?? 0);
 
-        $titulo = trim($_POST['titulo'] ?? '');
-        $descripcion = trim($_POST['descripcion'] ?? '');
-        $tipoReporte = trim($_POST['tipoReporte'] ?? '');
-        $prioridad = trim($_POST['prioridad'] ?? '');
+            $titulo = trim($_POST['titulo'] ?? '');
+            $descripcion = trim($_POST['descripcion'] ?? '');
+            $tipoReporte = trim($_POST['tipoReporte'] ?? '');
+            $prioridad = trim($_POST['prioridad'] ?? '');
 
-        if ($idInquilino <= 0 || $idPropiedad <= 0 || $titulo === '') {
-            throw new Exception("Faltan datos obligatorios");
-        }
-
-        if (!in_array($tipoReporte, ['Mantenimiento','Cobranza','Legal','Inventario','General'])) {
-            throw new Exception("Tipo de reporte inválido");
-        }
-
-        if (!in_array($prioridad, ['Alta','Media','Baja'])) {
-            throw new Exception("Prioridad inválida");
-        }
-
-        /* ===== SUBIR ARCHIVO ===== */
-        $evidencia = "";
-
-        if (!empty($_FILES['evidencia']['name']) && $_FILES['evidencia']['error'] === 0) {
-
-            $carpeta = "../images/reports/";
-
-            if (!file_exists($carpeta)) {
-                mkdir($carpeta, 0777, true);
+            if ($idInquilino <= 0 || $idPropiedad <= 0 || $titulo === '') {
+                throw new Exception("Faltan datos obligatorios");
             }
 
-            $nombreArchivo = time() . "_" . basename($_FILES['evidencia']['name']);
-            $rutaDestino = $carpeta . $nombreArchivo;
-
-            if (move_uploaded_file($_FILES['evidencia']['tmp_name'], $rutaDestino)) {
-                $evidencia = $nombreArchivo;
+            if (!in_array($tipoReporte, ['Mantenimiento','Cobranza','Legal','Inventario','General'])) {
+                throw new Exception("Tipo de reporte inválido");
             }
+
+            if (!in_array($prioridad, ['Alta','Media','Baja'])) {
+                throw new Exception("Prioridad inválida");
+            }
+
+            $evidencia = "";
+
+            if (!empty($_FILES['evidencia']['name']) && $_FILES['evidencia']['error'] === 0) {
+
+                $carpeta = "../images/reports/";
+
+                if (!file_exists($carpeta)) {
+                    mkdir($carpeta, 0777, true);
+                }
+
+                $nombreArchivo = time() . "_" . basename($_FILES['evidencia']['name']);
+                $rutaDestino = $carpeta . $nombreArchivo;
+
+                if (move_uploaded_file($_FILES['evidencia']['tmp_name'], $rutaDestino)) {
+                    $evidencia = $nombreArchivo;
+                }
+            }
+
+            mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+
+            $stmt = $conn->prepare("CALL sp_RegistrarReporte(?, ?, ?, ?, ?, ?, ?)");
+
+            if (!$stmt) {
+                throw new Exception("Error en prepare: " . $conn->error);
+            }
+
+            $stmt->bind_param(
+                "iisssss",
+                $idInquilino,
+                $idPropiedad,
+                $titulo,
+                $descripcion,
+                $tipoReporte,
+                $prioridad,
+                $evidencia
+            );
+
+            $stmt->execute();
+
+            while ($stmt->more_results() && $stmt->next_result()) {
+                if ($res = $stmt->get_result()) $res->free();
+            }
+
+            $stmt->close();
+
+            $mensaje = "Reporte enviado correctamente";
+            $tipoMensaje = "success";
+
+        } catch (Throwable $e) {
+
+            $mensaje = "Error: " . $e->getMessage();
+            $tipoMensaje = "error";
         }
-
-        /* ===== DEBUG MYSQL REAL ===== */
-        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-
-        $stmt = $conn->prepare("CALL sp_RegistrarReporte(?, ?, ?, ?, ?, ?, ?)");
-
-        if (!$stmt) {
-            throw new Exception("Error en prepare: " . $conn->error);
-        }
-
-        $stmt->bind_param(
-            "iisssss",
-            $idInquilino,
-            $idPropiedad,
-            $titulo,
-            $descripcion,
-            $tipoReporte,
-            $prioridad,
-            $evidencia
-        );
-
-        $stmt->execute();
-
-        /* limpiar resultados del SP */
-        while ($stmt->more_results() && $stmt->next_result()) {
-            if ($res = $stmt->get_result()) $res->free();
-        }
-
-        $stmt->close();
-
-        $mensaje = "Reporte enviado correctamente";
-        $tipoMensaje = "success";
-
-    } catch (Throwable $e) {
-
-        $mensaje = "Error: " . $e->getMessage();
-        $tipoMensaje = "error";
     }
-}
 }
 
 ?>
@@ -234,6 +228,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <html lang="es">
 
 <head>
+
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -244,17 +239,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <style>
 
 /* =========================
-   LAYOUT GENERAL
+   GENERAL
 ========================= */
 
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
+
+body{
+    background:#f5f7fb;
+    font-family:'Segoe UI',sans-serif;
+    color:#111;
+}
+
 .container{
-    display:block;
     width:100%;
+    min-height:100vh;
 }
 
 .main-content{
-    width:100%;
-    padding:40px 40px 20px 40px;
+    padding:35px;
 }
 
 /* =========================
@@ -265,54 +271,78 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     display:flex;
     justify-content:space-between;
     align-items:center;
+    margin-bottom:35px;
+}
+
+.top-bar h1{
+    font-size:40px;
+    font-weight:800;
+}
+
+.subtitle{
+    color:#777;
+    margin-top:5px;
 }
 
 .header-right{
     display:flex;
     align-items:center;
-    gap:16px;
+    gap:20px;
 }
 
-/* USUARIO */
 .logged-user{
     display:flex;
     align-items:center;
-    gap:10px;
+    gap:12px;
+    background:white;
+    padding:8px 16px;
+    border-radius:18px;
+    box-shadow:0 4px 18px rgba(0,0,0,.06);
 }
 
 .logged-user img{
     border-radius:50%;
+    object-fit:cover;
 }
 
-/* BOTÓN CERRAR SESIÓN */
 .logout-icon{
-    width:42px;
-    height:42px;
-    padding:10px;
+    width:48px;
+    height:48px;
+    padding:12px;
     background:white;
     border-radius:50%;
     cursor:pointer;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    box-shadow:0 2px 10px rgba(0,0,0,0.12);
-    transition:0.2s ease;
-    object-fit:contain;
+    box-shadow:0 4px 18px rgba(0,0,0,.08);
+    transition:.2s;
 }
 
 .logout-icon:hover{
     transform:scale(1.05);
-    box-shadow:0 4px 14px rgba(0,0,0,0.18);
 }
 
 /* =========================
-   GRID ABONOS
+   CARRUSEL
 ========================= */
 
+.carousel-wrapper{
+    overflow-x:auto;
+    padding-bottom:10px;
+    margin-bottom:35px;
+}
+
+.carousel-wrapper::-webkit-scrollbar{
+    height:8px;
+}
+
+.carousel-wrapper::-webkit-scrollbar-thumb{
+    background:#d4d4d4;
+    border-radius:20px;
+}
+
 .abonos-grid{
-    display:grid;
-    grid-template-columns:repeat(3,1fr);
-    gap:28px;
+    display:flex;
+    gap:25px;
+    min-width:max-content;
 }
 
 /* =========================
@@ -320,102 +350,306 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 ========================= */
 
 .abono-card{
+    min-width:360px;
     background:white;
     border-radius:28px;
-    padding:26px;
-    box-shadow:var(--shadow);
+    padding:24px;
+    box-shadow:0 8px 25px rgba(0,0,0,.06);
+    border:1px solid #ededed;
     transition:.25s ease;
-    border:1px solid #f0f0f0;
 }
 
 .abono-card:hover{
-    transform:translateY(-6px);
+    transform:translateY(-5px);
 }
 
-/* HEADER CARD */
 .abono-header{
     display:flex;
     justify-content:space-between;
-    align-items:center;
+    align-items:flex-start;
     margin-bottom:18px;
 }
 
 .tenant{
     display:flex;
-    align-items:center;
-    gap:14px;
+    gap:15px;
 }
 
 .tenant img{
-    width:60px;
-    height:60px;
-    border-radius:16px;
+    width:65px;
+    height:65px;
+    border-radius:18px;
+    object-fit:cover;
 }
 
-/* =========================
-   ESTADO
-========================= */
+.tenant h3{
+    font-size:19px;
+}
+
+.tenant p{
+    color:#777;
+    margin-top:4px;
+}
 
 .status{
-    padding:6px 12px;
+    padding:7px 14px;
     border-radius:999px;
     font-size:12px;
     font-weight:700;
 }
 
-.pending{background:#f3f4f6;color:#4b5563;}
-.approved{background:#dcfce7;color:#166534;}
-.rejected{background:#fee2e2;color:#991b1b;}
+.pending{
+    background:#eef2ff;
+    color:#4338ca;
+}
+
+.approved{
+    background:#dcfce7;
+    color:#166534;
+}
+
+.rejected{
+    background:#fee2e2;
+    color:#991b1b;
+}
 
 /* =========================
    INFO
 ========================= */
 
+.abono-info{
+    margin-top:15px;
+}
+
 .abono-info p{
     display:flex;
     justify-content:space-between;
-    margin-bottom:10px;
-    color:var(--text-muted);
+    margin-bottom:12px;
+    color:#666;
+}
+
+.abono-info b{
+    color:#111;
 }
 
 /* =========================
-   PROGRESS BAR
+   PROGRESS
 ========================= */
 
 .progress-bar{
-    height:9px;
-    background:#eee;
+    width:100%;
+    height:10px;
+    background:#ececec;
     border-radius:999px;
     overflow:hidden;
-    margin-top:10px;
+    margin-top:15px;
 }
 
 .progress{
     height:100%;
-    background:linear-gradient(90deg,#111,#444);
+    background:linear-gradient(90deg,#111,#555);
 }
 
 /* =========================
-   BOTONES CARD
+   BUTTONS
 ========================= */
 
 .card-actions{
     display:flex;
-    gap:10px;
-    margin-top:15px;
+    gap:12px;
+    margin-top:22px;
 }
 
 .btn-custom{
     flex:1;
-    height:44px;
     border:none;
-    border-radius:14px;
-    font-weight:600;
+    height:46px;
+    border-radius:15px;
+    font-weight:700;
     cursor:pointer;
+    transition:.2s;
 }
 
-.btn-primary{background:#111;color:white;}
-.btn-secondary{background:#f3f4f6;}
+.btn-custom:hover{
+    transform:translateY(-2px);
+}
+
+.btn-primary{
+    background:#111;
+    color:white;
+}
+
+.btn-secondary{
+    background:#eceff5;
+}
+
+/* =========================
+   PANEL INFERIOR
+========================= */
+
+.dashboard-panels{
+    display:grid;
+    grid-template-columns:1.4fr .8fr;
+    gap:25px;
+    margin-top:10px;
+}
+
+.panel{
+    background:white;
+    border-radius:30px;
+    padding:28px;
+    box-shadow:0 8px 25px rgba(0,0,0,.06);
+}
+
+/* =========================
+   TABLA
+========================= */
+
+.table-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:22px;
+}
+
+.table-header h2{
+    font-size:28px;
+}
+
+.custom-table{
+    width:100%;
+    border-collapse:collapse;
+}
+
+.custom-table th{
+    text-align:left;
+    padding-bottom:15px;
+    color:#777;
+    font-size:14px;
+}
+
+.custom-table td{
+    padding:16px 0;
+    border-top:1px solid #eee;
+    font-weight:500;
+}
+
+.table-user{
+    display:flex;
+    align-items:center;
+    gap:12px;
+}
+
+.table-user img{
+    width:45px;
+    height:45px;
+    border-radius:14px;
+    object-fit:cover;
+}
+
+/* =========================
+   FILTROS TABLA
+========================= */
+
+.table-filters{
+    display:flex;
+    gap:12px;
+    align-items:center;
+}
+
+.table-filters input{
+    padding:12px 14px;
+    border:none;
+    outline:none;
+    border-radius:14px;
+    background:#f3f4f6;
+    font-size:14px;
+    transition:.2s;
+}
+
+.table-filters input:focus{
+    background:white;
+    box-shadow:0 0 0 2px #111;
+}
+
+/* =========================
+   SCROLL TABLA
+========================= */
+
+.table-scroll{
+    max-height:500px;
+    overflow-y:auto;
+    overflow-x:hidden;
+    padding-right:6px;
+}
+
+/* SCROLL MODERNO */
+
+.table-scroll::-webkit-scrollbar{
+    width:8px;
+}
+
+.table-scroll::-webkit-scrollbar-thumb{
+    background:#d1d5db;
+    border-radius:20px;
+}
+
+.table-scroll::-webkit-scrollbar-track{
+    background:transparent;
+}
+
+/* HEADER FIJO */
+
+.custom-table thead{
+    position:sticky;
+    top:0;
+    background:white;
+    z-index:10;
+}
+
+/* EFECTO HOVER */
+
+.custom-table tbody tr{
+    transition:.2s;
+}
+
+.custom-table tbody tr:hover{
+    background:#f8fafc;
+}
+
+/* =========================
+   LOGO PANEL
+========================= */
+
+.logo-panel{
+    background:#111;
+    color:white;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
+    text-align:center;
+    min-height:420px;
+    overflow:hidden;
+    position:relative;
+}
+
+.logo-panel img{
+    width:220px;
+    margin-bottom:25px;
+    object-fit:contain;
+}
+
+.logo-panel h2{
+    font-size:34px;
+    margin-bottom:10px;
+}
+
+.logo-panel p{
+    color:#d1d5db;
+    line-height:1.6;
+    max-width:320px;
+}
 
 /* =========================
    MODAL
@@ -428,48 +662,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     left:0;
     width:100%;
     height:100%;
-    z-index:9999;
     justify-content:center;
     align-items:center;
+    z-index:9999;
 }
 
 .modal-content{
+    width:430px;
     background:white;
-    padding:28px;
-    border-radius:20px;
-    width:420px;
-    box-shadow:0 20px 60px rgba(0,0,0,0.25);
+    border-radius:24px;
+    padding:30px;
+    box-shadow:0 20px 60px rgba(0,0,0,.25);
 }
 
 .modal-content h2{
-    margin-bottom:15px;
+    margin-bottom:18px;
 }
 
 .modal-content input,
-.modal-content textarea{
+.modal-content textarea,
+.modal-content select{
     width:100%;
     margin:10px 0;
-    padding:12px;
-    border-radius:12px;
+    padding:13px;
+    border-radius:14px;
     border:1px solid #ddd;
     outline:none;
 }
 
-/* BOTONES MODAL */
 .modal-buttons{
     display:flex;
-    justify-content:space-between;
-    margin-top:15px;
-    gap:10px;
+    gap:12px;
+    margin-top:20px;
 }
 
 .modal-buttons button{
     flex:1;
-    padding:10px;
     border:none;
-    border-radius:12px;
-    font-weight:600;
+    padding:13px;
+    border-radius:14px;
     cursor:pointer;
+    font-weight:700;
 }
 
 .modal-buttons button[type="submit"]{
@@ -478,44 +711,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 .modal-buttons button[type="button"]{
-    background:#f3f4f6;
+    background:#eef2f7;
 }
-
-/* =========================
-   OVERLAY
-========================= */
 
 .overlay{
     display:none;
     position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    background:rgba(0,0,0,0.4);
+    inset:0;
+    background:rgba(0,0,0,.45);
     z-index:9998;
-}
-
-/* =========================
-   FORM ELEMENTS
-========================= */
-
-.input-group{
-    display:flex;
-    flex-direction:column;
-    margin-bottom:15px;
-}
-
-.input-group label{
-    font-weight:600;
-    margin-bottom:6px;
-}
-
-.input-group select{
-    padding:10px;
-    border-radius:10px;
-    border:1px solid #ddd;
-    outline:none;
 }
 
 /* =========================
@@ -526,40 +730,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     display:grid;
     grid-template-columns:repeat(3,1fr);
     gap:10px;
-    margin-top:10px;
+    margin-top:15px;
 }
 
 .priority-card{
-    padding:12px;
-    border-radius:14px;
-    border:1px solid #ddd;
+    padding:14px;
+    border-radius:16px;
     cursor:pointer;
-    transition:.2s;
-    background:#fafafa;
+    border:1px solid #e5e7eb;
 }
 
-.priority-card:hover{
-    transform:translateY(-2px);
+.priority-high{
+    background:#fee2e2;
 }
 
-.priority-card h4{
-    margin:0;
+.priority-medium{
+    background:#fef9c3;
 }
 
-.priority-card p{
-    font-size:12px;
-    color:#666;
+.priority-low{
+    background:#dcfce7;
 }
 
-/* radio oculto */
 .hidden-radio{
     display:none;
 }
 
-/* colores prioridad */
-.priority-high{background:#fee2e2;}
-.priority-medium{background:#fef9c3;}
-.priority-low{background:#dcfce7;}
+/* =========================
+   MENSAJES
+========================= */
+
+.message{
+    padding:15px 18px;
+    border-radius:15px;
+    margin-bottom:25px;
+    font-weight:600;
+}
+
+.success{
+    background:#dcfce7;
+    color:#166534;
+}
+
+.error{
+    background:#fee2e2;
+    color:#991b1b;
+}
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media(max-width:1100px){
+
+    .dashboard-panels{
+        grid-template-columns:1fr;
+    }
+
+    .logo-panel{
+        min-height:320px;
+    }
+}
+
+.user-info{
+    display:flex;
+    flex-direction:column;
+    line-height:1.2;
+}
+
+.user-label{
+    font-size:12px;
+    color:#777;
+    font-weight:500;
+}
+
+.user-name{
+    font-size:15px;
+    color:#111;
+}
 
 </style>
 
@@ -574,26 +822,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <header class="top-bar">
 
     <div>
-        <h1>Control de Abonos</h1>
-        <p class="subtitle">Gestión de deudas en tiempo real</p>
+        <h1>Gestion de Cobros</h1>
+        <p class="subtitle">Gestión de abonos e inquilinos</p>
     </div>
 
     <div class="header-right">
 
-        <!-- CERRAR SESIÓN -->
         <img 
             src="../images/icons/Cerrar_Oscuro.png"
             alt="Cerrar Sesión"
-            class="top-icon logout-icon"
+            class="logout-icon"
             onclick="window.location.href='Login.php'"
         >
 
-        <!-- USUARIO -->
         <div class="logged-user">
 
-            <img src="<?= htmlspecialchars($imagenUsuario) ?>" width="45" height="45" style="border-radius:50%">
+            <img 
+                src="<?= htmlspecialchars($imagenUsuario) ?>" 
+                width="48" 
+                height="48"
+            >
 
-            <strong><?= htmlspecialchars($nombreCompleto) ?></strong>
+            <div class="user-info">
+
+                <span class="user-label">
+                    En uso por
+                </span>
+
+                <strong class="user-name">
+                    <?= htmlspecialchars($nombreCompleto) ?>
+                </strong>
+
+            </div>
 
         </div>
 
@@ -607,11 +867,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 <?php endif; ?>
 
-<section>
+<!-- =========================
+     CARRUSEL SUPERIOR
+========================= -->
+
+<div class="carousel-wrapper">
 
 <div class="abonos-grid">
 
-<?php while($row = mysqli_fetch_assoc($result)):
+<?php
+mysqli_data_seek($result, 0);
+
+while($row = mysqli_fetch_assoc($result)):
 
 $porcentaje = ($row['MontoTotal'] > 0)
     ? (($row['MontoTotal'] - $row['MontoPendiente']) / $row['MontoTotal']) * 100
@@ -620,7 +887,6 @@ $porcentaje = ($row['MontoTotal'] > 0)
 $img = !empty($row['ImagenInquilino'])
     ? "../images/person/".$row['ImagenInquilino']
     : "../images/icons/Usuario.png";
-
 ?>
 
 <div class="abono-card">
@@ -628,12 +894,14 @@ $img = !empty($row['ImagenInquilino'])
     <div class="abono-header">
 
         <div class="tenant">
+
             <img src="<?= htmlspecialchars($img) ?>">
 
             <div>
                 <h3><?= htmlspecialchars($row['Inquilino']) ?></h3>
                 <p><?= htmlspecialchars($row['Propiedad']) ?></p>
             </div>
+
         </div>
 
         <span class="status <?= strtolower($row['Estado']) ?>">
@@ -643,24 +911,41 @@ $img = !empty($row['ImagenInquilino'])
     </div>
 
     <div class="abono-info">
-        <p><span>Total</span><b>$<?= number_format($row['MontoTotal'],2) ?></b></p>
-        <p><span>Pendiente</span><b>$<?= number_format($row['MontoPendiente'],2) ?></b></p>
-        <p><span>Límite</span><b><?= $row['FechaLimite'] ?></b></p>
+
+        <p>
+            <span>Total</span>
+            <b>$<?= number_format($row['MontoTotal'],2) ?></b>
+        </p>
+
+        <p>
+            <span>Pendiente</span>
+            <b>$<?= number_format($row['MontoPendiente'],2) ?></b>
+        </p>
+
+        <p>
+            <span>Fecha límite</span>
+            <b><?= $row['FechaLimite'] ?></b>
+        </p>
+
     </div>
 
-    <!-- PROGRESO RESTAURADO -->
     <div class="progress-bar">
-        <div class="progress" style="width:<?= $porcentaje ?>%"></div>
+        <div 
+            class="progress"
+            style="width:<?= $porcentaje ?>%">
+        </div>
     </div>
 
     <div class="card-actions">
 
-        <button class="btn-custom btn-primary"
+        <button 
+            class="btn-custom btn-primary"
             onclick="abrirModalAbono(<?= $row['idContrato'] ?>)">
             Abonar
         </button>
 
-        <button class="btn-custom btn-secondary"
+        <button 
+            class="btn-custom btn-secondary"
             onclick="abrirModalReporte(<?= $row['idInquilino'] ?>, <?= $row['idPropiedad'] ?>)">
             Reporte
         </button>
@@ -673,9 +958,120 @@ $img = !empty($row['ImagenInquilino'])
 
 </div>
 
-</section>
+</div>
 
-<!-- MODAL BONITO RESTAURADO -->
+<!-- =========================
+     PANEL INFERIOR
+========================= -->
+
+<div class="dashboard-panels">
+
+    <!-- TABLA -->
+    <div class="panel">
+
+    <div class="table-header">
+
+        <h2>Inquilinos</h2>
+
+        <div class="table-filters">
+
+            <input 
+                type="text"
+                id="buscarInquilino"
+                placeholder="Buscar inquilino..."
+            >
+
+            <input 
+                type="date"
+                id="filtroFecha"
+            >
+
+        </div>
+
+    </div>
+
+        <div class="table-scroll">
+
+            <table class="custom-table">
+
+                <thead>
+
+                    <tr 
+                        class="fila-inquilino"
+                        data-fecha="<?= htmlspecialchars($row['FechaLimite']) ?>"
+                    >
+                        <th>Inquilino</th>
+                        <th>Propiedad</th>
+                        <th>Pendiente</th>
+                        <th>Estado</th>
+                    </tr>
+
+                </thead>
+
+                <tbody>
+
+                <?php
+                mysqli_data_seek($result, 0);
+
+                while($row = mysqli_fetch_assoc($result)):
+
+                $img = !empty($row['ImagenInquilino'])
+                    ? "../images/person/".$row['ImagenInquilino']
+                    : "../images/icons/Usuario.png";
+                ?>
+
+                <tr>
+
+                    <td>
+
+                        <div class="table-user">
+
+                            <img src="<?= htmlspecialchars($img) ?>">
+
+                            <span><?= htmlspecialchars($row['Inquilino']) ?></span>
+
+                        </div>
+
+                    </td>
+
+                    <td><?= htmlspecialchars($row['Propiedad']) ?></td>
+
+                    <td>$<?= number_format($row['MontoPendiente'],2) ?></td>
+
+                    <td><?= htmlspecialchars($row['Estado']) ?></td>
+
+                </tr>
+
+                <?php endwhile; ?>
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    </div>
+
+    <!-- LOGO -->
+    <div class="panel logo-panel">
+
+        <img src="../images/icons/Logo_Oscuro.png">
+
+        <h2>Sunlight Garden</h2>
+
+        <p>
+            Sistema administrativo moderno para la gestión
+            de propiedades, inquilinos y control de pagos.
+        </p>
+
+    </div>
+
+</div>
+
+<!-- =========================
+     MODAL ABONO
+========================= -->
+
 <div id="modalAbono" class="modal">
 
     <div class="modal-content">
@@ -685,16 +1081,35 @@ $img = !empty($row['ImagenInquilino'])
         <form method="POST">
 
             <input type="hidden" name="accion" value="solicitar_abono">
-            <input type="hidden" id="idContratoAbono" name="idContratoAbono">
 
-            <input type="number" step="0.01" name="montoSolicitado" placeholder="Monto" required>
+            <input 
+                type="hidden" 
+                id="idContratoAbono" 
+                name="idContratoAbono"
+            >
 
-            <textarea name="observaciones" placeholder="Observaciones"></textarea>
+            <input 
+                type="number"
+                step="0.01"
+                name="montoSolicitado"
+                placeholder="Monto"
+                required
+            >
+
+            <textarea 
+                name="observaciones"
+                placeholder="Observaciones">
+            </textarea>
 
             <div class="modal-buttons">
 
-                <button type="button" onclick="cerrarModal()">Cancelar</button>
-                <button type="submit">Confirmar</button>
+                <button type="button" onclick="cerrarModal()">
+                    Cancelar
+                </button>
+
+                <button type="submit">
+                    Confirmar
+                </button>
 
             </div>
 
@@ -703,6 +1118,10 @@ $img = !empty($row['ImagenInquilino'])
     </div>
 
 </div>
+
+<!-- =========================
+     MODAL REPORTE
+========================= -->
 
 <div id="modalReporte" class="modal">
 
@@ -715,54 +1134,77 @@ $img = !empty($row['ImagenInquilino'])
             <input type="hidden" name="accion" value="registrar_reporte">
 
             <input type="hidden" id="idInquilino" name="idInquilino">
+
             <input type="hidden" id="idPropiedad" name="idPropiedad">
 
-            <input type="text" name="titulo" placeholder="Título" required>
+            <input 
+                type="text"
+                name="titulo"
+                placeholder="Título"
+                required
+            >
 
-            <textarea name="descripcion" placeholder="Descripción"></textarea>
+            <textarea 
+                name="descripcion"
+                placeholder="Descripción">
+            </textarea>
 
-            <!-- TIPO DE REPORTE -->
-            <div class="input-group">
+            <select name="tipoReporte" required>
 
-                <label>Tipo de Reporte</label>
+                <option selected disabled>
+                    Tipo de reporte
+                </option>
 
-                <select name="tipoReporte" required>
+                <option value="Mantenimiento">Mantenimiento</option>
+                <option value="Cobranza">Cobranza</option>
+                <option value="Legal">Legal</option>
+                <option value="Inventario">Inventario</option>
+                <option value="General">General</option>
 
-                    <option selected disabled>
-                        Selecciona una opción
-                    </option>
+            </select>
 
-                    <option value="Mantenimiento">Mantenimiento</option>
-                    <option value="Cobranza">Cobranza</option>
-                    <option value="Legal">Legal</option>
-                    <option value="Inventario">Inventario</option>
-                    <option value="General">General</option>
-
-                </select>
-
-            </div>
-
-            <!-- PRIORIDAD -->
-            <h3 class="section-subtitle">Nivel de Prioridad</h3>
+            <h3 style="margin-top:15px;">Prioridad</h3>
 
             <div class="priority-box">
 
                 <label class="priority-card priority-high">
-                    <input type="radio" name="prioridad" value="Alta" required class="hidden-radio">
+
+                    <input 
+                        type="radio"
+                        name="prioridad"
+                        value="Alta"
+                        required
+                        class="hidden-radio"
+                    >
+
                     <h4>Alta</h4>
-                    <p>Problemas urgentes.</p>
+
                 </label>
 
                 <label class="priority-card priority-medium">
-                    <input type="radio" name="prioridad" value="Media" class="hidden-radio">
+
+                    <input 
+                        type="radio"
+                        name="prioridad"
+                        value="Media"
+                        class="hidden-radio"
+                    >
+
                     <h4>Media</h4>
-                    <p>Situaciones importantes.</p>
+
                 </label>
 
                 <label class="priority-card priority-low">
-                    <input type="radio" name="prioridad" value="Baja" class="hidden-radio">
+
+                    <input 
+                        type="radio"
+                        name="prioridad"
+                        value="Baja"
+                        class="hidden-radio"
+                    >
+
                     <h4>Baja</h4>
-                    <p>Solicitudes menores.</p>
+
                 </label>
 
             </div>
@@ -771,8 +1213,13 @@ $img = !empty($row['ImagenInquilino'])
 
             <div class="modal-buttons">
 
-                <button type="button" onclick="cerrarReporte()">Cancelar</button>
-                <button type="submit">Enviar</button>
+                <button type="button" onclick="cerrarReporte()">
+                    Cancelar
+                </button>
+
+                <button type="submit">
+                    Enviar
+                </button>
 
             </div>
 
@@ -791,21 +1238,22 @@ $img = !empty($row['ImagenInquilino'])
 <script>
 
 function abrirModalAbono(idContrato){
+
     document.getElementById("modalAbono").style.display = "flex";
     document.getElementById("overlay").style.display = "block";
     document.getElementById("idContratoAbono").value = idContrato;
 }
 
 function cerrarModal(){
+
     document.getElementById("modalAbono").style.display = "none";
     document.getElementById("overlay").style.display = "none";
 }
 
-/* REPORTE */
 function abrirModalReporte(idInquilino, idPropiedad){
 
     if(!idInquilino || !idPropiedad){
-        alert("Error: datos de propiedad incompletos");
+        alert("Error: datos incompletos");
         return;
     }
 
@@ -817,14 +1265,55 @@ function abrirModalReporte(idInquilino, idPropiedad){
 }
 
 function cerrarReporte(){
+
     document.getElementById("modalReporte").style.display = "none";
     document.getElementById("overlay").style.display = "none";
 }
 
 document.getElementById("overlay").onclick = function(){
+
     cerrarModal();
     cerrarReporte();
 };
+
+/* =========================
+   FILTRO EN TIEMPO REAL
+========================= */
+
+const buscador = document.getElementById("buscarInquilino");
+const filtroFecha = document.getElementById("filtroFecha");
+
+function filtrarTabla(){
+
+    const texto = buscador.value.toLowerCase();
+    const fecha = filtroFecha.value;
+
+    const filas = document.querySelectorAll(".fila-inquilino");
+
+    filas.forEach(fila => {
+
+        const contenido = fila.innerText.toLowerCase();
+        const fechaFila = fila.dataset.fecha;
+
+        let mostrar = true;
+
+        /* FILTRO TEXTO */
+        if(!contenido.includes(texto)){
+            mostrar = false;
+        }
+
+        /* FILTRO FECHA */
+        if(fecha && fechaFila !== fecha){
+            mostrar = false;
+        }
+
+        fila.style.display = mostrar ? "" : "none";
+    });
+}
+
+buscador.addEventListener("keyup", filtrarTabla);
+
+filtroFecha.addEventListener("change", filtrarTabla);
 
 </script>
 

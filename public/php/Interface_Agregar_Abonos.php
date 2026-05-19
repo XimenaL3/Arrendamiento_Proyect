@@ -1087,6 +1087,18 @@ else
 
 </div>
 
+        <!-- FOOTER -->
+        <footer class="footer">
+
+            <p>
+
+                © 2026 DiamondsCorporation.
+                Todos los derechos reservados.
+
+            </p>
+
+        </footer>
+
     </main>
 
 </div>
