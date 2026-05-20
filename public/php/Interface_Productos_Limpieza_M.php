@@ -210,7 +210,12 @@ if(isset($_POST['atenderReporte'])){
                 $cantidad
             );
 
-            $stmtGuardar->execute();
+            if(!$stmtGuardar->execute()){
+
+                die($stmtGuardar->error);
+
+            }
+
             $stmtGuardar->close();
 
         }
@@ -1166,7 +1171,7 @@ BOTON LOGOUT
 MODAL
 ========================================= -->
 
-<form method="POST">
+<form method="POST" id="formAtenderReporte">
 
 <input
     type="hidden"
@@ -1207,6 +1212,7 @@ MODAL
             <div
                 class="product-card"
                 data-id="<?= $producto['idProducto'] ?>"
+                data-stock="<?= $producto['CantidadDisponible'] ?>"
             >
 
                 <img
@@ -1375,7 +1381,9 @@ PRODUCTOS
 
 const productosSeleccionados = [];
 
-/* BOTONES + Y - */
+/* =========================================
+RECORRER PRODUCTOS
+========================================= */
 
 document.querySelectorAll('.product-card').forEach(card => {
 
@@ -1384,66 +1392,109 @@ document.querySelectorAll('.product-card').forEach(card => {
     const qtyNumber = card.querySelector('.qty-number');
     const addBtn = card.querySelector('.btn-add');
 
-    let cantidad = 1;
+    const idProducto = Number(card.dataset.id);
 
-    /* SUMAR */
+    const stockDisponible = Number(card.dataset.stock);
+
+    let cantidadActual = 1;
+
+    /* =====================================
+    SUMAR
+    ===================================== */
 
     plusBtn.addEventListener('click', () => {
 
-        cantidad++;
+        if(cantidadActual < stockDisponible){
 
-        qtyNumber.textContent = cantidad;
+            cantidadActual++;
 
-    });
-
-    /* RESTAR */
-
-    minusBtn.addEventListener('click', () => {
-
-        if(cantidad > 1){
-
-            cantidad--;
-
-            qtyNumber.textContent = cantidad;
+            qtyNumber.textContent = cantidadActual;
 
         }
 
     });
 
-    /* AGREGAR PRODUCTO */
+    /* =====================================
+    RESTAR
+    ===================================== */
+
+    minusBtn.addEventListener('click', () => {
+
+        if(cantidadActual > 1){
+
+            cantidadActual--;
+
+            qtyNumber.textContent = cantidadActual;
+
+        }
+
+    });
+
+    /* =====================================
+    AGREGAR PRODUCTO
+    ===================================== */
 
     addBtn.addEventListener('click', () => {
 
-        const idProducto = card.dataset.id;
+        const productoExistente =
+            productosSeleccionados.find(
+                producto => producto.id === idProducto
+            );
 
-        const existente = productosSeleccionados.find(
-            producto => producto.id == idProducto
-        );
+        let cantidadYaAgregada = 0;
+
+        if(productoExistente){
+
+            cantidadYaAgregada =
+                productoExistente.cantidad;
+
+        }
+
+        /* VALIDAR STOCK */
+
+        if(
+            (cantidadYaAgregada + cantidadActual)
+            > stockDisponible
+        ){
+
+            alert(
+                `Solo existen ${stockDisponible} unidades disponibles`
+            );
+
+            return;
+
+        }
 
         /* SI YA EXISTE -> SUMAR */
 
-        if(existente){
+        if(productoExistente){
 
-            existente.cantidad += cantidad;
+            productoExistente.cantidad += cantidadActual;
 
         }else{
 
             productosSeleccionados.push({
 
                 id: idProducto,
-                cantidad: cantidad
+                cantidad: cantidadActual
 
             });
 
         }
 
-        addBtn.textContent = "Producto Agregado ✓";
+        /* OBTENER TOTAL FINAL */
 
-        setTimeout(() => {
+        const totalFinal =
+            productoExistente
+            ? productoExistente.cantidad
+            : cantidadActual;
 
-            addBtn.textContent = "Agregar Producto";
+        /* ESTADO VISUAL */
 
-        }, 1200);
+        addBtn.textContent =
+            `Agregado (${totalFinal}) ✓`;
+
+        addBtn.style.background = "#16a34a";
 
     });
 
@@ -1453,7 +1504,20 @@ document.querySelectorAll('.product-card').forEach(card => {
 ENVIAR PRODUCTOS AL FORMULARIO
 ========================================= */
 
-document.querySelector('form').addEventListener('submit', function(e){
+
+document.getElementById('formAtenderReporte').addEventListener('submit', function(e){
+
+    if(productosSeleccionados.length === 0){
+
+        e.preventDefault();
+
+        alert(
+            'Debes seleccionar al menos un producto'
+        );
+
+        return;
+
+    }
 
     /* LIMPIAR INPUTS ANTERIORES */
 
@@ -1470,6 +1534,7 @@ document.querySelector('form').addEventListener('submit', function(e){
         const inputId = document.createElement('input');
 
         inputId.type = 'hidden';
+
         inputId.name =
             `productos[${index}][id]`;
 

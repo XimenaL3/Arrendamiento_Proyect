@@ -598,3 +598,23 @@ INNER JOIN ContratosArrendamiento c ON a.idContrato = c.idContrato
 INNER JOIN Inquilinos i ON c.idInquilino = i.idInquilino
 INNER JOIN Personas p ON i.idPersona = p.idPersona
 INNER JOIN Propiedades pr ON c.idPropiedad = pr.idPropiedad;
+
+CREATE OR REPLACE VIEW vw_MantenimientoDetalle AS
+SELECT
+
+    md.idMantenimiento,
+    md.idReporte,
+    md.idPropiedad,
+    md.idUsuario,
+    md.idProducto,
+
+    bi.NombreProducto,
+
+    md.TareaRealizada,
+    md.FechaInicio,
+    md.FechaFin
+
+FROM Mantenimiento_Detalle md
+
+INNER JOIN Bodega_Inventario bi
+ON bi.idProducto = md.idProducto;

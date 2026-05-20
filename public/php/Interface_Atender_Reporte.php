@@ -141,7 +141,9 @@ OBTENER PRODUCTOS DEL REPORTE
 ========================================= */
 
 $sqlProductos = "
-SELECT p.*
+SELECT 
+    p.*,
+    rp.cantidad AS CantidadUsada
 FROM Reporte_Productos rp
 INNER JOIN vw_Productos p 
     ON p.idProducto = rp.idProducto
@@ -169,36 +171,55 @@ if(isset($_POST['registrarMantenimiento'])){
     $tareaRealizada = trim($_POST['tareaRealizada']);
     $fechaFin = date('Y-m-d H:i:s');
 
-    /* =========================
-       INSERTAR DETALLES
-    ========================= */
+    /* =========================================
+    REGISTRAR TODOS LOS PRODUCTOS DEL REPORTE
+    ========================================= */
 
-    if(isset($_POST['productos']) && !empty($_POST['productos'])){
+    $sqlProductosReporte = "
+    SELECT idProducto
+    FROM Reporte_Productos
+    WHERE idReporte = ?
+    ";
 
-        foreach($_POST['productos'] as $producto){
+    $stmtProductosReporte = $conn->prepare($sqlProductosReporte);
 
-            $idProducto = intval($producto['id']);
+    $stmtProductosReporte->bind_param(
+        "i",
+        $idReporte
+    );
 
-            $stmt = $conn->prepare("
-                CALL sp_RegistrarMantenimientoDetalle(?, ?, ?, ?, ?)
-            ");
+    $stmtProductosReporte->execute();
 
-            $stmt->bind_param(
-                "iiiss",
-                $idReporte,
-                $idUsuario,
-                $idProducto,
-                $tareaRealizada,
-                $fechaFin
-            );
+    $resultProductosReporte =
+        $stmtProductosReporte->get_result();
 
-            $stmt->execute();
-            $stmt->close();
+    while($producto = $resultProductosReporte->fetch_assoc()){
 
-            while($conn->more_results() && $conn->next_result()){}
-        }
+        $idProducto = intval($producto['idProducto']);
 
+        $stmt = $conn->prepare("
+            CALL sp_RegistrarMantenimientoDetalle(?, ?, ?, ?, ?)
+        ");
+
+        $stmt->bind_param(
+            "iiiss",
+            $idReporte,
+            $idUsuario,
+            $idProducto,
+            $tareaRealizada,
+            $fechaFin
+        );
+
+        $stmt->execute();
+        $stmt->close();
+
+        while(
+            $conn->more_results() &&
+            $conn->next_result()
+        ){}
     }
+
+    $stmtProductosReporte->close();
 
     /* =========================
        FINALIZAR REPORTE (UNA SOLA VEZ)
@@ -1071,23 +1092,14 @@ MAIN CONTENT
                                 <p>
 
                                     <strong>
-                                        Stock:
+                                        Cantidad utilizada:
                                     </strong>
 
                                     <?php
-                                    echo $producto['CantidadDisponible'];
+                                    echo $producto['CantidadUsada'];
                                     ?>
 
                                 </p>
-
-                                <button 
-                                    type="button"
-                                    class="btn-product"
-                                >
-
-                                    Seleccionar Producto
-
-                                </button>
 
                             </div>
 
@@ -1155,63 +1167,6 @@ MAIN CONTENT
     </footer>
 
 </main>
-
-<!-- =========================================
-SCRIPT PRODUCTOS
-========================================= -->
-
-<script>
-
-document.querySelectorAll('.product-card').forEach(card => {
-
-    const button = card.querySelector('.btn-product');
-
-    const idProducto = card.dataset.id;
-
-    button.addEventListener('click', () => {
-
-        card.classList.toggle('selected');
-
-        if(card.classList.contains('selected')){
-
-            button.textContent = 'Producto Seleccionado';
-
-            button.classList.add('active');
-
-            const input = document.createElement('input');
-
-            input.type = 'hidden';
-
-            input.name = `productos[${idProducto}][id]`;
-
-            input.value = idProducto;
-
-            input.classList.add('hidden-product');
-
-            card.appendChild(input);
-
-        }else{
-
-            button.textContent = 'Seleccionar Producto';
-
-            button.classList.remove('active');
-
-            const hidden =
-                card.querySelector('.hidden-product');
-
-            if(hidden){
-
-                hidden.remove();
-
-            }
-
-        }
-
-    });
-
-});
-
-</script>
 
 </body>
 

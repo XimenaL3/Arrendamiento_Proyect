@@ -195,6 +195,48 @@ $totalTiendas = mysqli_num_rows($resultadoTiendas);
         font-size: 14px;
     }
 
+    .tienda-header{
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 15px;
+
+    width: 100%;
+
+    }
+
+    .tienda-logo{
+
+        width: 95px;
+
+        height: 95px;
+
+        object-fit: cover;
+
+        border-radius: 24px;
+
+        border: 2px solid #f3f4f6;
+
+        box-shadow: 0 8px 18px rgba(0,0,0,0.10);
+
+        flex-shrink: 0;
+
+    }
+
+    .tienda-card{
+
+        transition: .3s ease;
+
+    }
+
+    .tienda-card:hover{
+
+        transform: translateY(-5px);
+
+    }
+
     </style>
 
 </head>
@@ -486,6 +528,12 @@ $totalTiendas = mysqli_num_rows($resultadoTiendas);
 
                             <div class="tienda-header">
 
+                                <img 
+                                    src="../images/icons/Logo_Oscuro.jpeg"
+                                    alt="Tienda"
+                                    class="tienda-logo"
+                                >
+
                                 <div class="worker-title">
 
                                     <h3>
@@ -503,55 +551,6 @@ $totalTiendas = mysqli_num_rows($resultadoTiendas);
                                 </div>
 
                             </div>
-
-                        </div>
-
-                        <div class="card-body">
-
-                            <p>
-
-                                <img
-                                    src="../images/icons/Arrendamiento_Claro.png"
-                                    class="info-icon"
-                                >
-
-                                <?php
-                                    echo htmlspecialchars(
-                                        $tienda['TipoPropiedad']
-                                    );
-                                ?>
-
-                            </p>
-
-                            <p>
-
-                                <img
-                                    src="../images/icons/Visitas_Claro.png"
-                                    class="info-icon"
-                                >
-
-                                #<?php
-                                    echo htmlspecialchars(
-                                        $tienda['NumeroIdentificador']
-                                    );
-                                ?>
-
-                            </p>
-
-                            <p>
-
-                                <img
-                                    src="../images/icons/Reportes_Claro.png"
-                                    class="info-icon"
-                                >
-
-                                <?php
-                                    echo htmlspecialchars(
-                                        $tienda['EstadoDisponibilidad']
-                                    );
-                                ?>
-
-                            </p>
 
                         </div>
 

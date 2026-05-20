@@ -547,3 +547,17 @@ CREATE TABLE Reporte_Productos (
     cantidad INT,
     fechaAsignacion DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE Reporte_Productos
+ADD CONSTRAINT fk_reporte_producto_reporte
+FOREIGN KEY (idReporte)
+REFERENCES Reportes(idReporte)
+ON DELETE CASCADE
+ON UPDATE CASCADE;
+
+ALTER TABLE Reporte_Productos
+ADD CONSTRAINT fk_reporte_producto_producto
+FOREIGN KEY (idProducto)
+REFERENCES Bodega_Inventario(idProducto)
+ON DELETE CASCADE
+ON UPDATE CASCADE;

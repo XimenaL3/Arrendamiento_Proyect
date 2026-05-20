@@ -558,6 +558,14 @@ $serviciosJSON = json_encode($serviciosJSON);
 
         }
 
+        input:disabled{
+
+            background:#e5e7eb;
+            cursor:not-allowed;
+            opacity:0.7;
+
+        }
+
     </style>
 
 </head>
@@ -926,17 +934,16 @@ $serviciosJSON = json_encode($serviciosJSON);
 
                             <div class="input-group full-width">
 
-                                <label>
-                                    Dirección
-                                </label>
+                            <label>
+                                Descripción
+                            </label>
 
-                                <input 
-                                    type="text"
-                                    value="<?= htmlspecialchars($propiedad['Direccion']); ?>"
-                                    readonly
-                                >
+                            <textarea 
+                                rows="4"
+                                readonly
+                            ><?= htmlspecialchars($propiedad['Descripcion']); ?></textarea>
 
-                            </div>
+                        </div>
 
                         </div>
 
@@ -1110,6 +1117,7 @@ $serviciosJSON = json_encode($serviciosJSON);
                                     </label>
 
                                     <select
+                                        class="manejo-select"
                                         name="servicios[<?= $servicio['idServicio']; ?>][manejo]"
                                     >
 
@@ -1136,6 +1144,7 @@ $serviciosJSON = json_encode($serviciosJSON);
                                         step="0.01"
                                         min="0"
                                         max="100"
+                                        class="input-porcentaje"
                                         name="servicios[<?= $servicio['idServicio']; ?>][porcentaje]"
                                     >
 
@@ -1151,6 +1160,7 @@ $serviciosJSON = json_encode($serviciosJSON);
                                         type="number"
                                         step="0.01"
                                         min="0"
+                                        class="input-costo"
                                         name="servicios[<?= $servicio['idServicio']; ?>][costo]"
                                     >
 
@@ -1467,6 +1477,53 @@ $serviciosJSON = json_encode($serviciosJSON);
             });
 
         });
+
+    /* ==============================
+    SERVICIOS PORCENTAJE / COSTO
+    ============================== */
+
+    document.querySelectorAll('.info-card').forEach(card =>
+    {
+        const selectManejo = card.querySelector('.manejo-select');
+
+        const inputPorcentaje = card.querySelector('.input-porcentaje');
+
+        const inputCosto = card.querySelector('.input-costo');
+
+        function actualizarCampos()
+        {
+            if(selectManejo.value == "1")
+            {
+                // Manejo por porcentaje = SI
+
+                inputPorcentaje.disabled = false;
+
+                inputCosto.disabled = true;
+
+                inputCosto.value = "";
+
+            }
+            else
+            {
+                // Manejo por porcentaje = NO
+
+                inputCosto.disabled = false;
+
+                inputPorcentaje.disabled = true;
+
+                inputPorcentaje.value = "";
+            }
+        }
+
+        // Ejecutar al cargar
+        actualizarCampos();
+
+        // Ejecutar al cambiar
+        selectManejo.addEventListener(
+            'change',
+            actualizarCampos
+        );
+    });
 
     </script>
 

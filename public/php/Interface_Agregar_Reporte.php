@@ -133,18 +133,75 @@ OBTENER USUARIOS
 ============================== */
 
 $sqlUsuarios = 
-"    SELECT 
-        i.idInquilino,
-        CONCAT(
-            p.Nombre,' ',
-            p.ApellidoP,' ',
-            IFNULL(p.ApellidoM,'')
-        ) AS NombreCompleto
-    FROM Inquilinos i
-    INNER JOIN Personas p
-        ON i.idPersona = p.idPersona";
+"SELECT DISTINCT
+    i.idInquilino,
+
+    CONCAT(
+        p.Nombre, ' ',
+        p.ApellidoP, ' ',
+        IFNULL(p.ApellidoM,'')
+    ) AS NombreCompleto
+
+FROM Inquilinos i
+
+INNER JOIN Personas p
+    ON p.idPersona = i.idPersona
+
+INNER JOIN ContratosArrendamiento c
+    ON c.idInquilino = i.idInquilino
+
+WHERE c.FechaFin >= CURDATE()
+
+ORDER BY NombreCompleto ASC
+";
 
 $inquilinos = mysqli_query($conn, $sqlUsuarios);
+
+if(
+    isset($_POST['idInquilino']) &&
+    !isset($_POST['titulo'])
+)
+{
+    $idInquilino = $_POST['idInquilino'];
+
+    $sql = "
+    SELECT 
+        p.idPropiedad,
+
+        CONCAT(
+            p.TipoPropiedad,
+            ' #',
+            p.NumeroIdentificador
+        ) AS Propiedad
+
+    FROM ContratosArrendamiento c
+
+    INNER JOIN Propiedades p
+        ON p.idPropiedad = c.idPropiedad
+
+    WHERE c.idInquilino = ?
+    AND c.FechaFin >= CURDATE()
+    ";
+
+    $stmt = $conn->prepare($sql);
+
+    $stmt->bind_param("i", $idInquilino);
+
+    $stmt->execute();
+
+    $resultado = $stmt->get_result();
+
+    $propiedades = [];
+
+    while($fila = $resultado->fetch_assoc())
+    {
+        $propiedades[] = $fila;
+    }
+
+    echo json_encode($propiedades);
+
+    exit();
+}
 
 /* ==============================
 OBTENER PROPIEDADES
@@ -664,7 +721,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                                     Inquilino
                                 </label>
 
-                                <select name="idInquilino" required>
+                                <select name="idInquilino" id="idInquilino" required>
 
                                     <option selected disabled>
                                         Selecciona un inquilino
@@ -691,21 +748,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                                     Propiedad
                                 </label>
 
-                                <select name="idPropiedad" required>
+                                <select name="idPropiedad" id="idPropiedad" required>
 
                                     <option selected disabled>
-                                        Selecciona una propiedad
+                                        Primero selecciona un inquilino
                                     </option>
-
-                                    <?php while($propiedad = mysqli_fetch_assoc($propiedades)){ ?>
-
-                                        <option value="<?php echo $propiedad['idPropiedad']; ?>">
-
-                                            <?php echo $propiedad['Propiedad']; ?>
-
-                                        </option>
-
-                                    <?php } ?>
 
                                 </select>
 
@@ -1027,6 +1074,12 @@ else
 
         const priorityCards = document.querySelectorAll('.priority-card');
 
+        const selectInquilino =
+            document.getElementById('idInquilino');
+
+        const selectPropiedad =
+            document.getElementById('idPropiedad');
+
         priorityCards.forEach(card => {
 
             card.addEventListener('click', () => {
@@ -1042,6 +1095,77 @@ else
             });
 
         });
+
+        /* ==============================
+            CARGAR PROPIEDADES
+            ============================== */
+
+            selectInquilino.addEventListener('change', () =>
+            {
+                const idInquilino = selectInquilino.value;
+
+                fetch(window.location.href,
+                {
+                    method: 'POST',
+
+                    headers:
+                    {
+                        'Content-Type':
+                        'application/x-www-form-urlencoded'
+                    },
+
+                    body: 'idInquilino=' + idInquilino
+                })
+                .then(response => response.json())
+                .then(data =>
+                {
+                    selectPropiedad.innerHTML = '';
+
+                    if(data.length <= 0)
+                    {
+                        selectPropiedad.innerHTML = `
+                            <option disabled selected>
+                                No tiene propiedades
+                            </option>
+                        `;
+
+                        return;
+                    }
+
+                    if(data.length > 1)
+                    {
+                        selectPropiedad.innerHTML = `
+                            <option disabled selected>
+                                Selecciona una propiedad
+                            </option>
+                        `;
+                    }
+
+                    data.forEach(propiedad =>
+                    {
+                        const option =
+                            document.createElement('option');
+
+                        option.value =
+                            propiedad.idPropiedad;
+
+                        option.textContent =
+                            propiedad.Propiedad;
+
+                        selectPropiedad.appendChild(option);
+                    });
+
+                    // AUTOSELECCIONAR SI SOLO HAY 1
+
+                    if(data.length === 1)
+                    {
+                        selectPropiedad.value =
+                            data[0].idPropiedad;
+                    }
+
+                });
+
+            });
 
        /* ==============================
         MODAL NOTIFICACIONES

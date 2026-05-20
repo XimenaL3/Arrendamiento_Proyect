@@ -58,7 +58,13 @@ $nombreCompleto = trim("$nombre $apellidoP $apellidoM");
    VIEW ABONOS
 ========================= */
 
-$sql = "SELECT * FROM vw_abonos_adeudos ORDER BY idAdeudo DESC";
+$sql = "
+    SELECT *
+    FROM vw_abonos_adeudos
+    WHERE MontoPendiente > 0
+    AND Estado = 'Pendiente'
+    ORDER BY idAdeudo DESC
+";
 $result = mysqli_query($conn, $sql);
 
 if (!$result) {
@@ -658,21 +664,29 @@ body{
 .modal{
     display:none;
     position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
+    inset:0;
+
     justify-content:center;
     align-items:center;
-    z-index:9999;
+
+    z-index:10000;
 }
 
 .modal-content{
     width:430px;
-    background:white;
+    background:#ffffff;
+
     border-radius:24px;
     padding:30px;
-    box-shadow:0 20px 60px rgba(0,0,0,.25);
+
+    position:relative;
+    z-index:10001;
+
+    box-shadow:
+        0 25px 60px rgba(0,0,0,.35),
+        0 0 0 1px rgba(255,255,255,.4);
+
+    animation: modalScale .25s ease;
 }
 
 .modal-content h2{
@@ -715,11 +729,51 @@ body{
 }
 
 .overlay{
-    display:none;
+
     position:fixed;
     inset:0;
-    background:rgba(0,0,0,.45);
+
+    background:rgba(0,0,0,.55);
+
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+
+    opacity:0;
+    visibility:hidden;
+
+    transition:.3s ease;
+
     z-index:9998;
+}
+
+.overlay.active{
+
+    opacity:1;
+    visibility:visible;
+}
+
+@keyframes fadeIn{
+
+    from{
+        opacity:0;
+    }
+
+    to{
+        opacity:1;
+    }
+}
+
+@keyframes modalScale{
+
+    from{
+        transform:scale(.9);
+        opacity:0;
+    }
+
+    to{
+        transform:scale(1);
+        opacity:1;
+    }
 }
 
 /* =========================
@@ -808,6 +862,7 @@ body{
     font-size:15px;
     color:#111;
 }
+
 
 </style>
 
@@ -1020,8 +1075,10 @@ $img = !empty($row['ImagenInquilino'])
                     : "../images/icons/Usuario.png";
                 ?>
 
-                <tr>
-
+                <tr 
+                    class="fila-inquilino"
+                    data-fecha="<?= htmlspecialchars($row['FechaLimite']) ?>"
+                >
                     <td>
 
                         <div class="table-user">
@@ -1119,6 +1176,7 @@ $img = !empty($row['ImagenInquilino'])
 
 </div>
 
+<div id="overlay" class="overlay"></div>
 <!-- =========================
      MODAL REPORTE
 ========================= -->
@@ -1229,8 +1287,6 @@ $img = !empty($row['ImagenInquilino'])
 
 </div>
 
-<div id="overlay" class="overlay"></div>
-
 </main>
 
 </div>
@@ -1240,14 +1296,21 @@ $img = !empty($row['ImagenInquilino'])
 function abrirModalAbono(idContrato){
 
     document.getElementById("modalAbono").style.display = "flex";
-    document.getElementById("overlay").style.display = "block";
+
+    document
+        .getElementById("overlay")
+        .classList.add("active");
+
     document.getElementById("idContratoAbono").value = idContrato;
 }
 
 function cerrarModal(){
 
     document.getElementById("modalAbono").style.display = "none";
-    document.getElementById("overlay").style.display = "none";
+
+    document
+        .getElementById("overlay")
+        .classList.remove("active");
 }
 
 function abrirModalReporte(idInquilino, idPropiedad){
@@ -1258,7 +1321,10 @@ function abrirModalReporte(idInquilino, idPropiedad){
     }
 
     document.getElementById("modalReporte").style.display = "flex";
-    document.getElementById("overlay").style.display = "block";
+
+    document
+        .getElementById("overlay")
+        .classList.add("active");
 
     document.getElementById("idInquilino").value = idInquilino;
     document.getElementById("idPropiedad").value = idPropiedad;
@@ -1267,7 +1333,10 @@ function abrirModalReporte(idInquilino, idPropiedad){
 function cerrarReporte(){
 
     document.getElementById("modalReporte").style.display = "none";
-    document.getElementById("overlay").style.display = "none";
+
+    document
+        .getElementById("overlay")
+        .classList.remove("active");
 }
 
 document.getElementById("overlay").onclick = function(){

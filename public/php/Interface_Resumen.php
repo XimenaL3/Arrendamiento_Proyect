@@ -129,6 +129,7 @@ $sqlPropiedades = "
     INNER JOIN Propiedades p
         ON p.idPropiedad = aa.idPropiedad
     WHERE aa.idInquilino = ?
+    AND aa.MontoPendiente > 0
 ";
 
 $stmtProp = $conn->prepare($sqlPropiedades);

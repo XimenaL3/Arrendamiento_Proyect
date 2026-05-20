@@ -120,6 +120,32 @@ if ($resultado && $resultado->num_rows > 0) {
     }
 }
 
+/* =========================================
+MANTENIMIENTOS
+========================================= */
+
+$mantenimientos = [];
+
+$sqlMantenimiento = "
+SELECT *
+FROM vw_MantenimientoDetalle
+";
+
+$resultMantenimiento = $conn->query($sqlMantenimiento);
+
+if(
+    $resultMantenimiento &&
+    $resultMantenimiento->num_rows > 0
+){
+
+    while($m = $resultMantenimiento->fetch_assoc()){
+
+        $mantenimientos[$m['idReporte']][] = $m;
+
+    }
+
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -598,6 +624,94 @@ if ($resultado && $resultado->num_rows > 0) {
 
         }
 
+        /* =========================================
+        MANTENIMIENTO TARJETAS
+        ========================================= */
+
+        .mantenimiento-section{
+
+            margin-top: 30px;
+
+        }
+
+        .mantenimiento-title{
+
+            font-size: 22px;
+
+            margin-bottom: 20px;
+
+            font-weight: 700;
+
+        }
+
+        .mantenimiento-grid{
+
+            display: grid;
+
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+
+            gap: 18px;
+
+        }
+
+        .mantenimiento-card{
+
+            background: #f9fafb;
+
+            border: 1px solid #e5e7eb;
+
+            border-radius: 22px;
+
+            padding: 20px;
+
+            transition: .3s ease;
+
+        }
+
+        .mantenimiento-card:hover{
+
+            transform: translateY(-4px);
+
+        }
+
+        .mantenimiento-card h4{
+
+            font-size: 18px;
+
+            margin-bottom: 15px;
+
+            color: #111827;
+
+        }
+
+        .mantenimiento-item{
+
+            margin-bottom: 14px;
+
+        }
+
+        .mantenimiento-item span{
+
+            display: block;
+
+            font-size: 12px;
+
+            color: #6b7280;
+
+            margin-bottom: 5px;
+
+        }
+
+        .mantenimiento-item strong{
+
+            font-size: 15px;
+
+            color: #111827;
+
+            line-height: 1.5;
+
+        }
+        
     </style>
 
 </head>
@@ -651,6 +765,7 @@ if ($resultado && $resultado->num_rows > 0) {
         </div>
 
     </div>
+    <div id="contenedorMantenimiento"></div>
 </div>
 
 <div class="container">
@@ -960,6 +1075,7 @@ if ($resultado && $resultado->num_rows > 0) {
         <div class="report-actions">
 
             <button class="btn-report btn-view btnVerReporteInfo"
+                data-idreporte="<?php echo $reporte['idReporte']; ?>"
                 data-titulo="<?php echo htmlspecialchars($reporte['Titulo']); ?>"
                 data-descripcion="<?php echo htmlspecialchars($reporte['Descripcion']); ?>"
                 data-usuario="<?php echo htmlspecialchars($reporte['NombreUsuario'].' '.$reporte['ApellidoP']); ?>"
@@ -1221,6 +1337,122 @@ document.addEventListener('click', (e) => {
         document.getElementById('modalFecha').innerText =
             btn.dataset.fecha;
 
+        /* =====================================
+        MANTENIMIENTOS
+        ===================================== */
+
+        const idReporte = btn.dataset.idreporte;
+
+        const estadoReporte = btn.dataset.estado;
+
+        const contenedor =
+            document.getElementById(
+                'contenedorMantenimiento'
+            );
+
+        contenedor.innerHTML = "";
+
+        if(
+            estadoReporte === "Finalizado" &&
+            mantenimientosData[idReporte]
+        ){
+
+        let html = `
+
+        <div class="mantenimiento-section">
+
+            <h3 class="mantenimiento-title">
+                Detalles de Mantenimiento
+            </h3>
+
+            <div class="mantenimiento-grid">
+
+                <div class="mantenimiento-card">
+
+                    <h4>
+                        Productos Utilizados
+                    </h4>
+
+        `;
+
+        mantenimientosData[idReporte].forEach(m => {
+
+            html += `
+
+                <div class="mantenimiento-item">
+
+                    <span>
+                        Producto
+                    </span>
+
+                    <strong>
+                        ${m.NombreProducto ?? 'Sin producto'}
+                    </strong>
+
+                </div>
+
+            `;
+
+        });
+
+        html += `
+
+                    <div class="mantenimiento-item">
+
+                        <span>
+                            Tarea Realizada
+                        </span>
+
+                        <strong>
+                            ${mantenimientosData[idReporte][0].TareaRealizada}
+                        </strong>
+
+                    </div>
+
+                    <div class="mantenimiento-item">
+
+                        <span>
+                            Fecha Inicio
+                        </span>
+
+                        <strong>
+                            ${mantenimientosData[idReporte][0].FechaInicio}
+                        </strong>
+
+                    </div>
+
+                    <div class="mantenimiento-item">
+
+                        <span>
+                            Fecha Fin
+                        </span>
+
+                        <strong>
+                            ${mantenimientosData[idReporte][0].FechaFin ?? 'Sin finalizar'}
+                        </strong>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+        `;
+
+        html += `
+
+                </div>
+
+            </div>
+
+        `;
+
+        contenedor.innerHTML = html;
+
+        }
+
         imgModal.style.display = "none";
 
         if (descripcionModal) {
@@ -1251,6 +1483,14 @@ document.addEventListener('click', (e) => {
 
         document.getElementById('modalTitulo').innerText =
             "Evidencia";
+
+        /* =====================================
+        OCULTAR MANTENIMIENTOS
+        ===================================== */
+
+        document.getElementById(
+            'contenedorMantenimiento'
+        ).innerHTML = "";
 
         if (descripcionModal) {
 
@@ -1410,6 +1650,15 @@ fechaFiltro.addEventListener(
     'change',
     filtrarReportes
 );
+
+
+const mantenimientosData = <?php
+echo json_encode(
+    $mantenimientos,
+    JSON_UNESCAPED_UNICODE |
+    JSON_UNESCAPED_SLASHES
+);
+?>;
 
 </script>
 
